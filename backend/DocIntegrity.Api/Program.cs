@@ -1,8 +1,16 @@
-using System.Security.Cryptography;
+using DocIntegrity.Api.Services;
+using DocIntegrity.Api.Services.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Controllers
+builder.Services.AddControllers();
+
+// OpenAPI
 builder.Services.AddOpenApi();
+
+// Services
+builder.Services.AddScoped<IHashService, HashService>();
 
 var app = builder.Build();
 
@@ -22,28 +30,7 @@ app.MapGet("/", () =>
     });
 });
 
-app.MapPost("/api/documents/hash", async (IFormFile file) =>
-{
-    if (file.Length == 0)
-    {
-        return Results.BadRequest(new
-        {
-            message = "El archivo está vacío."
-        });
-    }
-
-    await using var stream = file.OpenReadStream();
-
-    var hashBytes = await SHA256.HashDataAsync(stream);
-    var hash = Convert.ToHexString(hashBytes).ToLowerInvariant();
-
-    return Results.Ok(new
-    {
-        fileName = file.FileName,
-        size = file.Length,
-        sha256 = hash
-    });
-})
-.DisableAntiforgery();
+// Map controllers
+app.MapControllers();
 
 app.Run();
