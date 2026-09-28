@@ -1,5 +1,8 @@
+using DocIntegrity.Api.Data;
 using DocIntegrity.Api.Services;
 using DocIntegrity.Api.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +11,12 @@ builder.Services.AddControllers();
 
 // OpenAPI
 builder.Services.AddOpenApi();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection")
+    ));
+    
 
 // Services
 builder.Services.AddScoped<IHashService, HashService>();
