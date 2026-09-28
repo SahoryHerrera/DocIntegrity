@@ -20,6 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Services
 builder.Services.AddScoped<IHashService, HashService>();
+builder.Services.AddScoped<IBlockchainService, BlockchainService>();
 
 var app = builder.Build();
 

@@ -11,4 +11,9 @@ public class Document
     public long Size { get; set; }
 
     public DateTime RegisteredAt { get; set; }
+
+    public string BlockchainTransactionHash { get; set; } = string.Empty;
+
+    public long BlockchainBlockNumber { get; set; }
+    
 }
