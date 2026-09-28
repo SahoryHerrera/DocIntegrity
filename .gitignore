@@ -427,3 +427,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Node / Hardhat
+blockchain/node_modules/
+blockchain/cache/
+blockchain/artifacts/
+blockchain/ignition/deployments/
