@@ -108,11 +108,20 @@ public class DocumentsController : ControllerBase
         var currentHash =
             await _hashService.CalculateSha256Async(stream);
 
-        var isValid = string.Equals(
+        var hashMatches = string.Equals(
             registeredDocument.Sha256,
             currentHash,
             StringComparison.OrdinalIgnoreCase
         );
+
+        var currentHashRegisteredInBlockchain =
+            await _blockchainService.IsDocumentRegisteredAsync(
+                currentHash
+            );
+
+        var isValid =
+            hashMatches &&
+            currentHashRegisteredInBlockchain;
 
         var response = new VerifyResponseDto
         {
@@ -121,9 +130,12 @@ public class DocumentsController : ControllerBase
             RegisteredSha256 = registeredDocument.Sha256,
             CurrentSha256 = currentHash,
             IsValid = isValid,
+
             Message = isValid
-                ? "El documento conserva su integridad."
-                : "El documento ha sido modificado o no corresponde al archivo registrado."
+                ? "El documento conserva su integridad y su huella coincide con la registrada en blockchain."
+                : !currentHashRegisteredInBlockchain
+                    ? "La huella actual del documento no se encuentra registrada en blockchain."
+                    : "El documento no corresponde al registro seleccionado."
         };
 
         return Ok(response);
