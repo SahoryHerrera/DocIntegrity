@@ -15,5 +15,12 @@ public class Document
     public string BlockchainTransactionHash { get; set; } = string.Empty;
 
     public long BlockchainBlockNumber { get; set; }
-    
+
+    public string AiDocumentType { get; set; } = string.Empty;
+
+    public string AiTitle { get; set; } = string.Empty;
+
+    public string AiSummary { get; set; } = string.Empty;
+
+    public string AiMetadataJson { get; set; } = "{}";
 }
