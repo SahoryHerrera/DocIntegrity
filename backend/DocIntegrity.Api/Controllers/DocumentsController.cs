@@ -38,7 +38,7 @@ public class DocumentsController : ControllerBase
     // =========================================================
 
     [HttpPost("register")]
-    public async Task<ActionResult<HashResponseDto>> RegisterDocument(
+    public async Task<ActionResult<RegisterDocumentResponseDto>> RegisterDocument(
         [FromForm] IFormFile file)
     {
         if (file.Length == 0)
@@ -151,18 +151,52 @@ public class DocumentsController : ControllerBase
 
         await _dbContext.SaveChangesAsync();
 
-        var response = new HashResponseDto
+        // =====================================================
+        // 6. RESPUESTA COMPLETA
+        // =====================================================
+
+        var response = new RegisterDocumentResponseDto
         {
+            Id = document.Id,
+
             FileName = document.FileName,
+
             Size = document.Size,
-            Sha256 = document.Sha256
+
+            Sha256 = document.Sha256,
+
+            RegisteredAt = document.RegisteredAt,
+
+            Blockchain = new BlockchainRegistrationDto
+            {
+                TransactionHash =
+                    document.BlockchainTransactionHash,
+
+                BlockNumber =
+                    document.BlockchainBlockNumber
+            },
+
+            Analysis = new DocumentAnalysisDto
+            {
+                DocumentType =
+                    document.AiDocumentType,
+
+                Title =
+                    document.AiTitle,
+
+                Summary =
+                    document.AiSummary,
+
+                Metadata =
+                    analysis.Metadata
+            }
         };
 
         return Ok(response);
     }
 
     // =========================================================
-    // OBTENER DOCUMENTOS
+    // OBTENER DOCUMENTOS REGISTRADOS
     // =========================================================
 
     [HttpGet]
@@ -178,7 +212,32 @@ public class DocumentsController : ControllerBase
     }
 
     // =========================================================
-    // VERIFICAR INTEGRIDAD DE DOCUMENTO
+    // OBTENER DOCUMENTO POR ID
+    // =========================================================
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<Document>> GetDocumentById(
+        Guid id)
+    {
+        var document = await _dbContext.Documents
+            .FirstOrDefaultAsync(
+                document => document.Id == id
+            );
+
+        if (document is null)
+        {
+            return NotFound(new
+            {
+                message =
+                    "El documento registrado no fue encontrado."
+            });
+        }
+
+        return Ok(document);
+    }
+
+    // =========================================================
+    // VERIFICAR INTEGRIDAD
     // =========================================================
 
     [HttpPost("{id:guid}/verify")]
@@ -307,6 +366,7 @@ public class DocumentsController : ControllerBase
         return Ok(new
         {
             fileName = file.FileName,
+
             text = extractedText
         });
     }
