@@ -2,12 +2,15 @@ import { useState } from 'react';
 import Modal from './Modal.jsx';
 import Glyph from './Glyph.jsx';
 import { Icon } from './Icon.jsx';
+import { useDocuments } from '../hooks/useDocuments.js';
+import { docTitle } from '../lib/docs.js';
 import { short } from '../lib/format.js';
 
 const go = (hash) => () => { location.hash = hash; };
 
-/* Paleta de comandos (Ctrl/⌘ + K). Los documentos se buscarán cuando se carguen desde la API. */
-export default function CommandPalette({ onClose, onToggleTheme, documents = [] }) {
+/* Paleta de comandos (Ctrl/⌘ + K). Busca en los documentos reales y en las acciones. */
+export default function CommandPalette({ onClose, onToggleTheme }) {
+  const { items: documents } = useDocuments();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
   const actions = [
@@ -21,9 +24,9 @@ export default function CommandPalette({ onClose, onToggleTheme, documents = [] 
   ];
   const term = q.trim().toLowerCase().replace(/^0x/, '');
   const docs = documents
-    .filter((d) => !term || [d.fileName, d.aiTitle, d.aiDocumentType, d.sha256].some((x) => x && x.toLowerCase().includes(term)))
+    .filter((d) => !term || [d.fileName, d.ai && d.ai.title, d.ai && d.ai.documentType, d.sha256].some((x) => x && x.toLowerCase().includes(term)))
     .slice(0, 6)
-    .map((d) => ({ label: d.aiTitle || d.fileName, sub: short(d.sha256, 12, 6), sha: d.sha256, run: go(`#/documentos/${d.id}`) }));
+    .map((d) => ({ key: d.id, label: docTitle(d), sub: short(d.sha256, 12, 6), sha: d.sha256, run: go(`#/documentos/${d.id}`) }));
   const items = [...docs, ...actions.filter((a) => !term || a.label.toLowerCase().includes(term))];
   const sel = Math.min(idx, Math.max(0, items.length - 1));
   const run = (i) => { const it = items[i]; if (!it) return; onClose(); it.run(); };
@@ -45,7 +48,7 @@ export default function CommandPalette({ onClose, onToggleTheme, documents = [] 
       </div>
       <ul id="pal-list" className="pal-list" role="listbox" aria-label="Resultados">
         {items.length ? items.map((it, i) => (
-          <li key={it.label + i} role="option" id={`pal-${i}`} aria-selected={i === sel} onClick={() => run(i)}>
+          <li key={it.key || it.label} role="option" id={`pal-${i}`} aria-selected={i === sel} onClick={() => run(i)}>
             {it.sha ? <Glyph hex={it.sha} size={26} /> : <span className="pal-ic"><Icon name={it.ic} /></span>}
             <span className="pal-label">{it.label}</span>
             {it.sub && <span className="pal-sub mono">{it.sub}</span>}

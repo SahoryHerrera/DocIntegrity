@@ -3,8 +3,10 @@ import Dropzone from '../components/Dropzone.jsx';
 import Glyph from '../components/Glyph.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { FileCard, Notice, PageHead, Soon } from '../components/ui.jsx';
+import { useDocuments } from '../hooks/useDocuments.js';
+import { docTitle } from '../lib/docs.js';
 import { validatePdf } from '../lib/files.js';
-import { fmtBytes } from '../lib/format.js';
+import { fmtBytes, fmtDay, short } from '../lib/format.js';
 import { sha256Hex } from '../lib/sha256.js';
 
 const fresh = () => ({ file: null, sha: null, error: null });
@@ -13,8 +15,17 @@ const fresh = () => ({ file: null, sha: null, error: null });
  * Verificación. POST /api/documents/{id}/verify se conecta en la etapa 5.
  * La consulta por huella necesita un endpoint que el backend aún no tiene.
  */
-export default function VerificarView() {
+export default function VerificarView({ id }) {
   const [ver, setVer] = useState(fresh);
+  const docs = useDocuments();
+  const [docId, setDocId] = useState(id || '');
+  const sel = docs.items.find((d) => d.id === docId) || null;
+  const choose = (e) => {
+    setDocId(e.target.value);
+    // Actualiza la URL sin volver a montar la vista.
+    history.replaceState(null, '', e.target.value ? `#/verificar/${e.target.value}` : '#/verificar');
+  };
+  const loadingDocs = docs.status === 'loading' || docs.status === 'idle';
 
   const onFile = async (file) => {
     const v = await validatePdf(file);
@@ -42,10 +53,15 @@ export default function VerificarView() {
               <div className="field-step-body">
                 <label className="field-label" htmlFor="ver-doc">Documento registrado</label>
                 <div className="select-wrap">
-                  <select id="ver-doc" className="input" disabled><option value="">Elige un registro</option></select>
+                  <select id="ver-doc" className="input" value={sel ? docId : ''} onChange={choose} disabled={!docs.items.length}>
+                    <option value="">{loadingDocs ? 'Cargando registros…' : docs.items.length ? 'Elige un registro' : 'No hay registros'}</option>
+                    {docs.items.map((d) => <option key={d.id} value={d.id}>{docTitle(d)}, {fmtDay(d.registeredAt)}</option>)}
+                  </select>
                   <Icon name="chevronDown" />
                 </div>
-                <p className="field-hint">Los registros se cargarán desde la API de DocIntegrity.</p>
+                {sel && <p className="field-hint">{sel.fileName}. Huella <span className="mono">{short(sel.sha256, 10, 6)}</span>.</p>}
+                {docs.status === 'error' && <p className="field-error">{docs.error.message} <button className="link" type="button" onClick={docs.reload}>Reintentar</button></p>}
+                {docs.status === 'ready' && docId && !sel && <p className="field-error">El registro indicado en el enlace no existe.</p>}
               </div>
             </div>
             <div className="field-step">
@@ -66,7 +82,7 @@ export default function VerificarView() {
           </section>
           <section className="ver-out" aria-live="polite">
             <div className="compare compare-idle">
-              <figure><Glyph size={156} empty /><figcaption>Huella registrada <span className="muted">H₀</span></figcaption></figure>
+              <figure>{sel ? <Glyph hex={sel.sha256} size={156} /> : <Glyph size={156} empty />}<figcaption>Huella registrada <span className="muted">H₀</span></figcaption></figure>
               <span className="compare-vs" aria-hidden="true">=</span>
               <figure>{ver.sha ? <Glyph hex={ver.sha} size={156} /> : <Glyph size={156} empty />}<figcaption>Huella presentada <span className="muted">H₁</span></figcaption></figure>
             </div>
