@@ -1,0 +1,13 @@
+/* Ajustes de la versión React. huella.css se mantiene idéntico al prototipo. */
+
+/* En el prototipo era un <div>; aquí es un enlace al panel. */
+.login-brand { text-decoration: none; color: inherit; }
+
+/* Funciones sin backend todavía: visibles, pero deshabilitadas. */
+.tabs button[disabled] { display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: not-allowed; opacity: .7; white-space: nowrap; }
+@container view (max-width: 640px) {
+  .tabs .chip-soon { font-size: 0; gap: 0; padding: 3px 5px; }
+}
+.tabs button[disabled]:hover { color: var(--ink-2); }
+.chip-soon { vertical-align: middle; }
+.login-fine .chip-soon { margin-right: 4px; }
