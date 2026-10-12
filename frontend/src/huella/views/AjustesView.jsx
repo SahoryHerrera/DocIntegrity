@@ -1,9 +1,36 @@
 import { Icon } from '../components/Icon.jsx';
 import ServiceList from '../components/ServiceList.jsx';
 import { Kv, PageHead, Soon } from '../components/ui.jsx';
-import { APP, ENDPOINTS } from '../config.js';
+import { API, APP, ENDPOINTS } from '../config.js';
+import { useRequestLog } from '../hooks/useRequestLog.js';
+import { fmtNum, fmtRel, plural } from '../lib/format.js';
 
 const THEMES = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Oscuro']];
+const shortGuid = (path) => path.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i, (m) => `${m.slice(0, 8)}…`);
+const statusTone = (s) => (!s ? 't-alert' : s < 300 ? 't-seal' : s < 500 ? 't-warn' : 't-alert');
+
+function RequestLog() {
+  const log = useRequestLog();
+  return (
+    <div className="panel">
+      <header className="panel-head"><h3>Solicitudes recientes</h3><span className="muted small">{plural(log.length, 'solicitud', 'solicitudes')}</span></header>
+      {log.length ? (
+        <div className="table-wrap"><table className="table table-compact">
+          <thead><tr><th>Método</th><th>Ruta</th><th>Estado</th><th className="hide-sm">Tiempo</th><th className="hide-sm">Cuándo</th></tr></thead>
+          <tbody>{log.slice(0, 12).map((r) => (
+            <tr key={r.at + r.path}>
+              <td><span className={`method method-${r.method.toLowerCase()}`}>{r.method}</span></td>
+              <td className="mono small">{shortGuid(r.path)}</td>
+              <td><span className={`status ${statusTone(r.status)}`}>{r.status || 'Sin respuesta'}</span></td>
+              <td className="hide-sm tnum">{fmtNum(r.ms)} ms</td>
+              <td className="hide-sm muted">{fmtRel(r.at)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      ) : <p className="muted">Aún no hay solicitudes en esta sesión del navegador.</p>}
+    </div>
+  );
+}
 
 export default function AjustesView({ theme }) {
   return (
@@ -32,7 +59,10 @@ export default function AjustesView({ theme }) {
             <div className="panel">
               <header className="panel-head"><h3>Configuración</h3></header>
               <Kv rows={[
-                ['API', <span className="muted">Se configurará con las variables de entorno</span>],
+                ['API', API.baseUrl
+                  ? <span className="mono small">{API.baseUrl}</span>
+                  : <span className="t-alert">Falta VITE_API_URL en el archivo .env del frontend</span>],
+                ['Tiempo de espera', `${API.timeoutMs / 1000} s; ${API.longTimeoutMs / 60000} min al registrar o analizar con IA`],
                 ['Tamaño máximo', `${APP.maxFileMB} MB por archivo, solo PDF`],
               ]} />
             </div>
@@ -57,10 +87,7 @@ export default function AjustesView({ theme }) {
                 <tr key={m + p}><td><span className={`method method-${m.toLowerCase()}`}>{m}</span></td><td className="mono small">{p}</td><td className="hide-sm muted">{f}</td></tr>
               ))}</tbody>
             </table></div></div>
-            <div className="panel">
-              <header className="panel-head"><h3>Solicitudes recientes</h3></header>
-              <p className="muted">Aún no hay solicitudes.</p>
-            </div>
+            <RequestLog />
           </div>
         </section>
       </div>

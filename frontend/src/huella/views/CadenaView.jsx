@@ -1,6 +1,6 @@
 import { Icon } from '../components/Icon.jsx';
-import { EmptyState, Kv, PageHead, Soon } from '../components/ui.jsx';
-import { CONTRACT_FUNCTIONS } from '../config.js';
+import { CopyButton, EmptyState, HexGroups, Kv, PageHead, Soon } from '../components/ui.jsx';
+import { CHAIN, CONTRACT_FUNCTIONS } from '../config.js';
 
 /*
  * Blockchain. Las transacciones reales (hash y bloque de cada documento) llegan
@@ -17,8 +17,10 @@ export default function CadenaView() {
       <section className="panel contract">
         <div className="contract-grid">
           <Kv rows={[
-            ['Contrato', <span className="muted">Se configurará con las variables de entorno</span>],
-            ['Red', <span className="muted">Hardhat local</span>],
+            ['Contrato', CHAIN.contractAddress
+              ? <span className="hash"><HexGroups hex={CHAIN.contractAddress} /><CopyButton value={CHAIN.contractAddress} msg="Dirección copiada" label="Copiar dirección del contrato" /></span>
+              : <span className="muted">No configurado (VITE_CONTRACT_ADDRESS)</span>],
+            ['Red', CHAIN.network],
           ]} />
           <Kv rows={[
             ['Transacciones', '—'],

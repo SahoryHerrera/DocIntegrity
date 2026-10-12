@@ -1,10 +1,26 @@
 /*
- * Configuración de la interfaz. La URL de la API y los datos de la red se
- * leerán de variables de entorno (VITE_*) en la etapa 2.
+ * Configuración de la interfaz. Los valores de entorno (VITE_*) se incrustan en
+ * el código del navegador al compilar: nunca deben contener secretos.
  */
+const env = import.meta.env ?? {};
+
 export const APP = {
   name: 'Huella',
   maxFileMB: 20,
+};
+
+export const API = {
+  baseUrl: String(env.VITE_API_URL || '').trim().replace(/\/+$/, ''),
+  // Tiempo de espera general y el de las operaciones que pasan por Ollama
+  // (el HttpClient del backend espera hasta 5 minutos al modelo).
+  timeoutMs: 30_000,
+  longTimeoutMs: 360_000,
+};
+
+/* Solo para mostrar; el backend tiene su propia configuración de blockchain. */
+export const CHAIN = {
+  contractAddress: String(env.VITE_CONTRACT_ADDRESS || '').trim(),
+  network: String(env.VITE_CHAIN_NAME || 'Hardhat local').trim(),
 };
 
 /* Endpoints implementados en DocIntegrity.Api (DocumentsController y AuthController). */
