@@ -16,6 +16,14 @@ public class JwtService : IJwtService
         _configuration = configuration;
     }
 
+    public int ExpirationMinutes =>
+        int.TryParse(
+            _configuration["Jwt:ExpirationMinutes"],
+            out var configuredMinutes
+        )
+            ? configuredMinutes
+            : 60;
+
     public (string Token, DateTime ExpiresAt) GenerateToken(User user)
     {
         var secret =
@@ -32,16 +40,8 @@ public class JwtService : IJwtService
             _configuration["Jwt:Audience"]
             ?? "DocIntegrity.Client";
 
-        var expirationMinutes =
-            int.TryParse(
-                _configuration["Jwt:ExpirationMinutes"],
-                out var configuredMinutes
-            )
-                ? configuredMinutes
-                : 120;
-
         var expiresAt =
-            DateTime.UtcNow.AddMinutes(expirationMinutes);
+            DateTime.UtcNow.AddMinutes(ExpirationMinutes);
 
         var claims = new List<Claim>
         {

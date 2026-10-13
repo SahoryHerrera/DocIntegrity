@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrandMark, Icon } from '../components/Icon.jsx';
+import { useAuth } from '../hooks/useAuth.js';
+import { useToast } from '../hooks/useToast.js';
+import { fmtClock, initials } from '../lib/format.js';
 
 const NAV = [
   ['panel', 'Panel', 'panel'], ['registrar', 'Registrar', 'upload'], ['documentos', 'Documentos', 'files'],
@@ -8,7 +11,26 @@ const NAV = [
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const current = (active, key) => (active === key ? 'page' : undefined);
 
-function Sidebar({ active, onNavigate }) {
+/* Tiempo restante de la sesión, actualizado cada segundo, con aviso a 5 minutos del final. */
+function useSessionClock(auth) {
+  const toast = useToast();
+  const [now, setNow] = useState(() => Date.now());
+  const warned = useRef(false);
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const left = Math.max(0, auth.expiresAt - now);
+  useEffect(() => {
+    if (left > 0 && left <= 5 * 60_000 && !warned.current) {
+      warned.current = true;
+      toast('Tu sesión expira en menos de 5 minutos.', 'warn', { timeout: 8000 });
+    }
+  }, [left, toast]);
+  return { left, total: auth.sessionMinutes * 60_000 };
+}
+
+function Sidebar({ active, onNavigate, onLogout }) {
+  const auth = useAuth();
+  const { left, total } = useSessionClock(auth);
+  const user = auth.user || {};
   return (
     <aside className="sidebar" aria-label="Navegación principal">
       <a className="sb-brand" href="#/panel" onClick={onNavigate}><BrandMark size={28} /><span>Huella</span></a>
@@ -18,12 +40,15 @@ function Sidebar({ active, onNavigate }) {
         ))}
       </nav>
       <div className="sb-foot">
-        {/* La sesión real con Google y JWT se conecta en la etapa 6. */}
         <div className="sb-user">
-          <span className="avatar avatar-ghost"><Icon name="user" /></span>
-          <span className="sb-user-text"><strong>Sin sesión</strong><span>Inicia sesión con Google</span></span>
-          <a className="icon-btn" href="#/login" onClick={onNavigate} aria-label="Ir a iniciar sesión" title="Iniciar sesión"><Icon name="key" /></a>
+          <span className="avatar" aria-hidden="true">{initials(user.name)}</span>
+          <span className="sb-user-text"><strong>{user.name}</strong><span>{user.email}</span></span>
+          <button className="icon-btn" type="button" onClick={onLogout} aria-label="Cerrar sesión" title="Cerrar sesión"><Icon name="logout" /></button>
         </div>
+        <a className="sb-session" href="#/ajustes" onClick={onNavigate} title="Ver detalles de la sesión">
+          <span className="sb-session-row"><span>La sesión expira en</span><span className="tnum">{fmtClock(left)}</span></span>
+          <span className="sb-meter"><i style={{ transform: `scaleX(${total ? Math.min(1, left / total) : 0})` }} /></span>
+        </a>
       </div>
     </aside>
   );
@@ -58,7 +83,7 @@ function Tabbar({ active, onMenu, onNavigate }) {
   );
 }
 
-export default function Shell({ active, theme, onPalette, children }) {
+export default function Shell({ active, theme, onPalette, onLogout, children }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = () => setMenuOpen(false);
 
@@ -73,7 +98,7 @@ export default function Shell({ active, theme, onPalette, children }) {
 
   return (
     <div className="app">
-      <Sidebar active={active} onNavigate={closeMenu} />
+      <Sidebar active={active} onNavigate={closeMenu} onLogout={() => { closeMenu(); onLogout(); }} />
       <div className="main">
         <Topbar onPalette={onPalette} theme={theme} />
         {children}

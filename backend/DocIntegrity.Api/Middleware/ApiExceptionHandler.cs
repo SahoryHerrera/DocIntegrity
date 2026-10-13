@@ -120,9 +120,12 @@ public class ApiExceptionHandler : IExceptionHandler
     private static (int Status, string Code, string Message) Classify(
         ExternalServiceException exception)
     {
-        var service = exception.Service == ExternalService.Ai
-            ? "ai"
-            : "blockchain";
+        var service = exception.Service switch
+        {
+            ExternalService.Ai => "ai",
+            ExternalService.Identity => "identity",
+            _ => "blockchain"
+        };
 
         return exception.Failure switch
         {

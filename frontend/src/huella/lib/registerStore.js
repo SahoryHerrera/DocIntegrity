@@ -21,6 +21,8 @@ const fresh = () => ({
 });
 
 let state = fresh();
+// Cambia al cerrar sesión: el resultado de un registro de la sesión anterior se descarta.
+let generation = 0;
 const listeners = new Set();
 const emit = (patch) => { state = { ...state, ...patch }; listeners.forEach((fn) => fn()); };
 
@@ -29,6 +31,9 @@ export const registerStore = {
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 
   reset() { if (state.status !== 'running') { state = fresh(); listeners.forEach((fn) => fn()); } },
+
+  /* Cierre de sesión: borra todo, incluido un registro en curso cuyo resultado ya no se mostrará. */
+  clear() { generation++; state = fresh(); listeners.forEach((fn) => fn()); },
 
   /* Al volver a la vista, un resultado ya visto se descarta. */
   leave() { if (['done', 'duplicate', 'error'].includes(state.status) && state.seen) registerStore.reset(); },
@@ -45,12 +50,15 @@ export const registerStore = {
 
   async start() {
     if (state.status !== 'ready') return;
+    const gen = generation;
     emit({ status: 'running', error: null, conflict: null, result: null, startedAt: Date.now(), finishedAt: 0, seen: false });
     try {
       const result = await api.documents.register(state.file);
+      if (gen !== generation) return;
       emit({ status: 'done', result, finishedAt: Date.now() });
       documentsStore.load(); // el nuevo registro aparece en Documentos y el Panel
     } catch (error) {
+      if (gen !== generation) return;
       if (error.status === 409) {
         emit({ status: 'duplicate', conflict: error.data || { message: error.message }, finishedAt: Date.now() });
       } else {

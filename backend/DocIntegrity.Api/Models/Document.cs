@@ -23,4 +23,14 @@ public class Document
     public string AiSummary { get; set; } = string.Empty;
 
     public string AiMetadataJson { get; set; } = "{}";
+
+    // Propietario: el usuario autenticado que registró el documento.
+    // Es null en los registros históricos, anteriores a las bibliotecas privadas.
+    public Guid? RegisteredByUserId { get; set; }
+
+    public User? RegisteredByUser { get; set; }
+
+    // true cuando la huella ya estaba en la blockchain y se reutilizó esa
+    // transacción en lugar de enviar una nueva.
+    public bool BlockchainEvidenceReused { get; set; }
 }

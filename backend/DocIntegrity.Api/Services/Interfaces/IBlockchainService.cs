@@ -30,6 +30,14 @@ public interface IBlockchainService
         string transactionHash,
         string sha256
     );
+
+    // Busca en la cadena activa la transacción que registró esta huella
+    // (evento DocumentRegistered) y solo la devuelve si su recibo confirma
+    // la ejecución correcta, el contrato, el evento y el bloque.
+    // Devuelve null si no hay evidencia confirmable.
+    Task<(string TransactionHash, long BlockNumber)?> FindConfirmedRegistrationAsync(
+        string sha256
+    );
 }
 
 public record OnChainDocumentRecord(

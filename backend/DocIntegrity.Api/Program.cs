@@ -1,9 +1,11 @@
 using System.Text;
+using DocIntegrity.Api.Auth;
 using DocIntegrity.Api.Data;
 using DocIntegrity.Api.Middleware;
 using DocIntegrity.Api.Services;
 using DocIntegrity.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -44,14 +46,20 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // CORS
 // =========================================================
 
+var frontendOrigins =
+    builder.Configuration.GetSection("Frontend:Origins").Get<string[]>()
+    ?? ["http://localhost:5173"];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
+        // Credenciales: el navegador envía la cookie de sesión a la API.
         policy
-            .WithOrigins("http://localhost:5173")
+            .WithOrigins(frontendOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -130,9 +138,14 @@ builder.Services
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
+                RequireExpirationTime = true,
+                RequireSignedTokens = true,
 
                 ValidIssuer = jwtIssuer,
                 ValidAudience = jwtAudience,
+
+                // Solo HS256: se rechazan "none" y cualquier otro algoritmo.
+                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
 
                 IssuerSigningKey =
                     new SymmetricSecurityKey(
@@ -143,13 +156,65 @@ builder.Services
 
                 ClockSkew = TimeSpan.Zero
             };
+
+        options.Events = new JwtBearerEvents
+        {
+            // El navegador envía el JWT en la cookie HttpOnly; los clientes
+            // de API pueden seguir usando Authorization: Bearer.
+            OnMessageReceived = context =>
+            {
+                if (!context.Request.Headers.ContainsKey("Authorization") &&
+                    context.Request.Cookies.TryGetValue(SessionCookie.Name, out var cookieToken))
+                {
+                    context.Token = cookieToken;
+                }
+
+                return Task.CompletedTask;
+            },
+
+            // 401 y 403 en JSON, como el resto de errores de la API.
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                var expired = context.AuthenticateFailure is SecurityTokenExpiredException;
+
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    message = expired
+                        ? "Tu sesión expiró. Inicia sesión de nuevo."
+                        : "Debes iniciar sesión.",
+                    code = expired ? "session_expired" : "unauthorized"
+                });
+            },
+
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    message = "No tienes permiso para realizar esta acción.",
+                    code = "forbidden"
+                });
+            }
+        };
     });
 
 // =========================================================
 // AUTHORIZATION
+// Privado por defecto: todo endpoint exige sesión salvo que
+// se marque explícitamente con [AllowAnonymous].
 // =========================================================
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // =========================================================
 // BUILD APPLICATION
@@ -172,12 +237,14 @@ app.UseHttpsRedirection();
 
 app.UseCors("Frontend");
 
+app.UseMiddleware<CsrfProtectionMiddleware>((object)frontendOrigins);
+
 app.UseAuthentication();
 
 app.UseAuthorization();
 
 // =========================================================
-// ROOT ENDPOINT
+// ROOT ENDPOINT (público)
 // =========================================================
 
 app.MapGet("/", () =>
@@ -187,7 +254,7 @@ app.MapGet("/", () =>
         application = "DocIntegrity API",
         status = "Running"
     });
-});
+}).AllowAnonymous();
 
 // =========================================================
 // CONTROLLERS

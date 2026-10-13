@@ -12,7 +12,7 @@ import { registerStore } from '../lib/registerStore.js';
 /* Pasos de DocumentsController.RegisterDocument, en su orden real. */
 const STEPS = [
   { id: 'hash', label: 'Calcular la huella SHA-256', service: 'HashService' },
-  { id: 'dup', label: 'Comprobar que no esté registrado', service: 'PostgreSQL e isDocumentRegistered(bytes32)' },
+  { id: 'dup', label: 'Comprobar tu biblioteca y la blockchain', service: 'PostgreSQL e isDocumentRegistered(bytes32)' },
   { id: 'text', label: 'Extraer el texto del PDF', service: 'PdfTextExtractorService con PdfPig' },
   { id: 'ai', label: 'Clasificar y extraer metadatos', service: 'OllamaAiService, modelo local' },
   { id: 'chain', label: 'Registrar la huella en blockchain', service: 'BlockchainService, registerDocument(bytes32)' },
@@ -30,10 +30,12 @@ function stepsFor(r) {
     const d = r.result;
     const detail = {
       hash: { detail: d.sha256, mono: true },
-      dup: { detail: 'No había registros con esta huella en PostgreSQL ni en la blockchain activa.' },
+      dup: { detail: d.blockchainEvidenceReused ? 'No estaba en tu biblioteca. La huella ya estaba en la blockchain activa.' : 'No estaba en tu biblioteca ni en la blockchain activa.' },
       text: {},
       ai: { detail: d.ai ? `${d.ai.documentType || 'Sin tipo'}. ${plural(Object.keys(d.ai.metadata).length, 'metadato extraído', 'metadatos extraídos')}.` : 'El servidor no devolvió análisis.' },
-      chain: { detail: `Confirmada en el bloque ${fmtNum(d.blockchainBlockNumber)}.` },
+      chain: { detail: d.blockchainEvidenceReused
+        ? `No se envió otra transacción: se reutilizó la ya confirmada en el bloque ${fmtNum(d.blockchainBlockNumber)}.`
+        : `Confirmada en el bloque ${fmtNum(d.blockchainBlockNumber)}.` },
       db: { detail: `Registro ${d.id} guardado.` },
     };
     return STEPS.map((s) => ({ ...s, state: 'done', ...detail[s.id] }));
@@ -70,6 +72,11 @@ function ResultAside({ r, animate }) {
       <div className="reg-status"><Chip tone="seal">Registrado en blockchain</Chip><span className="muted small">{fmtDate(d.registeredAt)}</span></div>
       <h2 className="reg-title">{docTitle(d)}</h2>
       {mismatch && <Notice tone="warn" icon="alert">La huella oficial del servidor no coincide con la vista previa calculada en el navegador. Se muestra la del servidor.</Notice>}
+      {d.blockchainEvidenceReused && (
+        <Notice tone="info" icon="info">
+          <strong>Esta huella ya existía en la blockchain.</strong> El archivo idéntico se había registrado antes, así que se reutilizó la transacción confirmada en lugar de enviar otra. El documento queda en tu biblioteca privada.
+        </Notice>
+      )}
       <Kv rows={[
         ['Huella SHA-256', <HashBlock value={d.sha256} />],
         ['Transacción', <HashBlock value={d.blockchainTransactionHash} msg="Transacción copiada" label="Copiar transacción" />],
@@ -90,9 +97,7 @@ function DuplicateAside({ c }) {
       {c.sha256 ? <Glyph hex={c.sha256} size={200} /> : <Glyph size={200} empty />}
       <Notice tone="info" icon="info">
         <strong>{c.message}</strong>{' '}
-        Un mismo archivo siempre produce la misma huella, así que no se registra dos veces.
-        {c.databaseRecords > 1 && ` PostgreSQL ya tiene ${c.databaseRecords} registros con esta huella.`}
-        {c.registeredInBlockchain === false && ' Volver a anclar la huella en la cadena activa requiere una función que el backend aún no tiene.'}
+        Un mismo archivo siempre produce la misma huella, así que no se guarda dos veces en tu biblioteca.
       </Notice>
       <div className="btn-row">
         {c.documentId && <a className="btn btn-primary" href={`#/documentos/${c.documentId}`}>Abrir el registro</a>}

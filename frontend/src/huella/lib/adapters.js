@@ -39,6 +39,7 @@ export function normalizeDocument(d) {
     registeredAt: d.registeredAt,
     blockchainTransactionHash: chain.transactionHash,
     blockchainBlockNumber: chain.blockNumber,
+    blockchainEvidenceReused: !!d.blockchainEvidenceReused,
     ai: analysisOf(d.aiDocumentType, d.aiTitle, d.aiSummary, d.aiMetadataJson),
   };
 }
@@ -56,6 +57,7 @@ export function normalizeRegistration(r) {
     registeredAt: r.registeredAt,
     blockchainTransactionHash: chain.transactionHash,
     blockchainBlockNumber: chain.blockNumber,
+    blockchainEvidenceReused: !!b.evidenceReused,
     ai: analysisOf(a.documentType, a.title, a.summary, a.metadata),
   };
 }
@@ -110,12 +112,14 @@ export function normalizeBlockchainStatus(s) {
   };
 }
 
-/* AuthResponseDto de POST /api/auth/google. */
+const userOf = (u = {}) => ({ id: u.id, email: u.email, name: u.name, pictureUrl: text(u.pictureUrl) });
+
+/* AuthResponseDto de POST /api/auth/google. El token no se conserva en el navegador. */
 export function normalizeAuth(r) {
-  const u = r.user || {};
-  return {
-    token: r.token,
-    expiresAt: r.expiresAt,
-    user: { id: u.id, email: u.email, name: u.name, pictureUrl: text(u.pictureUrl) },
-  };
+  return { expiresAt: Date.parse(r.expiresAt) || 0, user: userOf(r.user) };
+}
+
+/* SessionDto de GET /api/auth/me. */
+export function normalizeSession(r) {
+  return { user: userOf(r.user), expiresAt: Date.parse(r.expiresAt) || 0, sessionMinutes: Number(r.sessionMinutes) || 60 };
 }

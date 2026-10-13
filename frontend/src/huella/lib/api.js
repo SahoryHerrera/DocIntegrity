@@ -3,10 +3,9 @@
  * Cada una corresponde a una acción de AuthController o DocumentsController.
  */
 import { API } from '../config.js';
-import { normalizeAuth, normalizeBlockchainStatus, normalizeDocument, normalizeRegistration, normalizeVerification } from './adapters.js';
+import { normalizeAuth, normalizeBlockchainStatus, normalizeDocument, normalizeRegistration, normalizeSession, normalizeVerification } from './adapters.js';
 import { createHttpClient } from './http.js';
 import { requestLog } from './requestLog.js';
-import { getValidToken } from './session.js';
 
 export { ApiError } from './http.js';
 
@@ -25,10 +24,12 @@ export function createApi(request) {
     health: (opts) => request('GET', '/', { auth: false, ...opts }),
 
     auth: {
-      /* POST /api/auth/google { idToken } → AuthResponseDto */
+      /* POST /api/auth/google { idToken } → AuthResponseDto; el JWT llega solo en la cookie HttpOnly */
       google: async (idToken, opts) => normalizeAuth(await request('POST', '/api/auth/google', { json: { idToken }, auth: false, ...opts })),
-      /* GET /api/auth/me ([Authorize]) → { userId, name, email } */
-      me: (opts) => request('GET', '/api/auth/me', opts),
+      /* GET /api/auth/me → SessionDto { user, expiresAt, sessionMinutes } */
+      me: async (opts) => normalizeSession(await request('GET', '/api/auth/me', opts)),
+      /* POST /api/auth/logout → 204, borra la cookie */
+      logout: (opts) => request('POST', '/api/auth/logout', { auth: false, ...opts }),
     },
 
     documents: {
@@ -53,9 +54,10 @@ export function createApi(request) {
 const request = createHttpClient({
   baseUrl: API.baseUrl,
   timeoutMs: API.timeoutMs,
-  getToken: getValidToken,
+  // El navegador no maneja el JWT: viaja en la cookie HttpOnly.
+  getToken: () => null,
   onLog: requestLog.push,
-  // La etapa 6 escuchará este evento para cerrar la sesión.
+  // La sesión (session.js) escucha este evento para cerrarla.
   onUnauthorized: () => window.dispatchEvent(new Event('huella:unauthorized')),
 });
 

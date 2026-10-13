@@ -25,12 +25,14 @@ export const CHAIN = {
 
 /* Endpoints implementados en DocIntegrity.Api (DocumentsController y AuthController). */
 export const ENDPOINTS = [
-  ['POST', '/api/auth/google', 'Valida el ID token de Google y emite el JWT del sistema.'],
-  ['GET', '/api/auth/me', 'Devuelve el usuario del JWT. Requiere Authorization.'],
-  ['POST', '/api/documents/register', 'Calcula la huella, analiza con IA, registra en blockchain y guarda el documento.'],
-  ['GET', '/api/documents', 'Lista los documentos registrados, del más reciente al más antiguo.'],
-  ['GET', '/api/documents/{id}', 'Devuelve el detalle de un documento registrado.'],
-  ['POST', '/api/documents/{id}/verify', 'Verifica la integridad de un archivo frente al registro.'],
+  ['POST', '/api/auth/google', 'Público. Valida el ID token de Google y fija la cookie de sesión.'],
+  ['GET', '/api/auth/me', 'Usuario y vencimiento de la sesión actual.'],
+  ['POST', '/api/auth/logout', 'Público. Borra la cookie de sesión.'],
+  ['POST', '/api/documents/register', 'Registra un PDF en tu biblioteca; reutiliza la evidencia si la huella ya está en blockchain.'],
+  ['GET', '/api/documents', 'Lista solo los documentos de tu biblioteca.'],
+  ['GET', '/api/documents/{id}', 'Detalle de un documento propio (404 si es ajeno).'],
+  ['GET', '/api/documents/{id}/blockchain-status', 'Estado en la blockchain activa de un documento propio.'],
+  ['POST', '/api/documents/{id}/verify', 'Verifica un archivo frente a un documento propio.'],
   ['POST', '/api/documents/analyze', 'Analiza un PDF con IA sin guardarlo.'],
   ['POST', '/api/documents/extract-text', 'Extrae el texto de un PDF sin guardarlo.'],
 ];

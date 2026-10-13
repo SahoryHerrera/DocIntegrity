@@ -49,7 +49,7 @@ export default function DocumentosView() {
   };
 
   const lede = docs.status === 'ready' || list.length
-    ? `${plural(list.length, 'documento registrado', 'documentos registrados')}. Abre uno para ver su evidencia y su análisis.`
+    ? `${plural(list.length, 'documento en tu biblioteca', 'documentos en tu biblioteca')}. Solo tú puedes verlos. Abre uno para ver su evidencia y su análisis.`
     : 'Documentos registrados. Abre uno para ver su evidencia y su análisis.';
 
   return (

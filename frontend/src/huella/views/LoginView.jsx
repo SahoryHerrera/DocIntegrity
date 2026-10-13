@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
 import { BrandMark, Icon } from '../components/Icon.jsx';
 import Glyph from '../components/Glyph.jsx';
 import Guilloche from '../components/Guilloche.jsx';
-import { HexGroups, Soon } from '../components/ui.jsx';
+import { HexGroups, Notice } from '../components/ui.jsx';
+import { useAuth } from '../hooks/useAuth.js';
+import { authStore } from '../lib/session.js';
+
+const GOOGLE_CLIENT_ID = (import.meta.env ?? {}).VITE_GOOGLE_CLIENT_ID;
 import { bitDiff } from '../lib/glyph.js';
 import { sha256Hex } from '../lib/sha256.js';
 
@@ -45,18 +50,48 @@ function HashDemo() {
   );
 }
 
-export default function LoginView() {
+/* Botón oficial de Google y estados del inicio de sesión. */
+function GoogleSignIn({ auth, dark }) {
+  if (!GOOGLE_CLIENT_ID) {
+    return <Notice tone="alert" icon="alert">Falta configurar <span className="mono">VITE_GOOGLE_CLIENT_ID</span> en el archivo .env del frontend.</Notice>;
+  }
+  if (auth.status === 'unavailable') {
+    return (
+      <Notice tone="alert" icon="alert" action={<button className="btn btn-sm btn-secondary" type="button" onClick={authStore.restore}><Icon name="refresh" />Reintentar</button>}>
+        <strong>No se pudo comprobar tu sesión.</strong> {auth.error && auth.error.kind === 'network' ? 'No se pudo conectar con la API de DocIntegrity.' : auth.error && auth.error.message}
+      </Notice>
+    );
+  }
+  return (
+    <>
+      {auth.notice && <Notice tone={auth.notice.tone} icon={auth.notice.tone === 'warn' ? 'clock' : 'check'}>{auth.notice.text}</Notice>}
+      {auth.error && <Notice tone="alert" icon="alert"><strong>No se pudo iniciar sesión.</strong> {auth.error.kind === 'network' ? 'No se pudo conectar con la API de DocIntegrity.' : auth.error.message}</Notice>}
+      <div className="login-google" aria-busy={auth.pending}>
+        {auth.pending
+          ? <p className="login-pending"><span className="spinner" aria-hidden="true" /> Validando tu identidad con el servidor…</p>
+          : <GoogleLogin
+              onSuccess={(response) => authStore.loginWithGoogle(response.credential)}
+              onError={authStore.googleFailed}
+              theme={dark ? 'filled_black' : 'outline'}
+              size="large" shape="pill" text="continue_with" locale="es" width="300"
+            />}
+      </div>
+    </>
+  );
+}
+
+export default function LoginView({ dark }) {
+  const auth = useAuth();
   useEffect(() => { document.title = 'Iniciar sesión | Huella'; }, []);
   return (
     <div className="login">
       <section className="login-main">
-        <a className="login-brand" href="#/panel"><BrandMark size={30} /><span>Huella</span></a>
+        <span className="login-brand"><BrandMark size={30} /><span>Huella</span></span>
         <div className="login-copy">
           <h1 className="login-title">Comprueba que un documento sigue siendo el que registraste.</h1>
           <p>Huella calcula la huella SHA-256 de cada PDF, la registra en blockchain y usa un modelo de IA local para clasificarlo y extraer sus datos.</p>
-          {/* El inicio de sesión con Google y el JWT del backend se conectan en la etapa 6. */}
-          <button className="btn btn-google" type="button" disabled><Icon name="user" /><span>Continuar con Google</span></button>
-          <p className="login-fine"><Soon title="El inicio de sesión se conectará con POST /api/auth/google." /> Tu identidad la confirma Google. Huella no guarda contraseñas.</p>
+          <GoogleSignIn auth={auth} dark={dark} />
+          <p className="login-fine">Tu identidad la confirma Google. Huella no guarda contraseñas, tu biblioteca es privada y tu sesión dura {auth.sessionMinutes} minutos.</p>
         </div>
         <ul className="login-facts">
           <li><Icon name="lock" /><span>El archivo no se guarda. Solo su huella y sus metadatos.</span></li>

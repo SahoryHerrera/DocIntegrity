@@ -3,6 +3,15 @@
 /* En el prototipo era un <div>; aquí es un enlace al panel. */
 .login-brand { text-decoration: none; color: inherit; }
 
+/* Inicio de sesión con Google: el botón lo dibuja Google; el resto conserva Huella. */
+.login-google { display: flex; align-items: center; min-height: 52px; margin-top: 32px; }
+.login-copy > .notice { margin: 24px 0 0; max-width: 46ch; }
+.login-pending { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink-2); }
+.login-brand { cursor: default; }
+
+/* Sesión en la barra lateral */
+.sb-user .avatar { flex: none; }
+
 /* Funciones sin backend todavía: visibles, pero deshabilitadas. */
 .tabs button[disabled] { display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: not-allowed; opacity: .7; white-space: nowrap; }
 @container view (max-width: 640px) {

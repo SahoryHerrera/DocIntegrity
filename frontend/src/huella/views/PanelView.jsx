@@ -42,7 +42,8 @@ function TxCoins({ docs }) {
   );
 }
 
-export default function PanelView() {
+export default function PanelView({ user }) {
+  const firstName = String((user && user.name) || '').trim().split(/\s+/)[0];
   const docs = useDocuments();
   const list = docs.items;
   const ready = docs.status === 'ready' || list.length > 0;
@@ -54,7 +55,7 @@ export default function PanelView() {
       <section className="hero" aria-labelledby="hero-t">
         <Guilloche className="hero-guilloche" rings={12} inner={36} outer={198} waves={28} amp={7} />
         <div className="hero-main">
-          <p className="hero-hello">Hola</p>
+          <p className="hero-hello">{firstName ? `Hola, ${firstName}` : 'Hola'}</p>
           <h1 className="hero-title" id="hero-t">¿Qué documento quieres registrar o verificar hoy?</h1>
           <div className="hero-actions">
             <a className="btn btn-mint" href="#/registrar"><Icon name="upload" />Registrar documento</a>

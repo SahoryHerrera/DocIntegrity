@@ -1,15 +1,21 @@
 using System.Text.Json;
+using DocIntegrity.Api.Auth;
 using DocIntegrity.Api.Data;
 using DocIntegrity.Api.DTOs;
 using DocIntegrity.Api.Exceptions;
 using DocIntegrity.Api.Models;
 using DocIntegrity.Api.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace DocIntegrity.Api.Controllers;
 
+// Bibliotecas privadas: cada usuario solo ve, consulta y verifica sus propios
+// documentos. El propietario sale siempre del JWT validado, nunca de la solicitud.
 [ApiController]
+[Authorize]
 [Route("api/documents")]
 public class DocumentsController : ControllerBase
 {
@@ -35,6 +41,79 @@ public class DocumentsController : ControllerBase
         _dbContext = dbContext;
         _logger = logger;
     }
+
+    // =========================================================
+    // USUARIO ACTUAL Y PROPIEDAD
+    // =========================================================
+
+    // Id del usuario del JWT, comprobando que siga existiendo en la base de datos.
+    private async Task<Guid?> GetCurrentUserIdAsync()
+    {
+        var userId = User.GetUserId();
+
+        if (userId is null)
+        {
+            return null;
+        }
+
+        var exists = await _dbContext.Users
+            .AsNoTracking()
+            .AnyAsync(user => user.Id == userId);
+
+        return exists ? userId : null;
+    }
+
+    private UnauthorizedObjectResult InvalidSession() => Unauthorized(new
+    {
+        message = "Tu sesión no es válida. Inicia sesión de nuevo.",
+        code = "unauthorized"
+    });
+
+    // Mismo 404 para un documento ajeno que para uno inexistente:
+    // no se confirma la existencia de documentos de otras personas.
+    private NotFoundObjectResult DocumentNotFound() => NotFound(new
+    {
+        message =
+            "El documento registrado no fue encontrado."
+    });
+
+    private IQueryable<Document> OwnDocuments(Guid userId) =>
+        _dbContext.Documents.Where(document => document.RegisteredByUserId == userId);
+
+    private ConflictObjectResult DuplicateForUser(Guid documentId, string sha256) => Conflict(new
+    {
+        message = "Ya tienes este documento en tu biblioteca.",
+        code = "duplicate_document",
+        documentId,
+        sha256
+    });
+
+    // Evidencia de una huella que ya estaba en la cadena activa: se reutiliza
+    // solo si la transacción, el evento y el bloque se confirman de verdad.
+    private async Task<(string TransactionHash, long BlockNumber)> RequireConfirmedEvidenceAsync(string sha256)
+    {
+        var evidence = await _blockchainService.FindConfirmedRegistrationAsync(sha256);
+
+        if (evidence is null)
+        {
+            _logger.LogWarning("La huella figura en el contrato, pero no se encontró una transacción confirmada que la registre.");
+
+            throw new ExternalServiceException(
+                ExternalService.Blockchain,
+                ExternalFailure.Rejected,
+                "La huella figura en la blockchain, pero no se pudo confirmar la transacción que la registró. El documento no se guardó."
+            );
+        }
+
+        return evidence.Value;
+    }
+
+    private static bool IsOwnerShaUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "UX_Documents_Owner_Sha256"
+        };
 
     // =========================================================
     // VALIDACIÓN DE ARCHIVOS
@@ -118,6 +197,13 @@ public class DocumentsController : ControllerBase
     public async Task<ActionResult<RegisterDocumentResponseDto>> RegisterDocument(
         [FromForm] IFormFile? file)
     {
+        var userId = await GetCurrentUserIdAsync();
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
         var fileError = await ValidatePdfAsync(file);
 
         if (fileError is not null)
@@ -140,68 +226,64 @@ public class DocumentsController : ControllerBase
                 .CalculateSha256Async(hashStream);
         }
 
-        // =====================================================
-        // 2. RECHAZAR DUPLICADOS ANTES DE USAR LA IA
-        // PostgreSQL y la blockchain activa se consultan por
-        // separado: pueden no coincidir si el nodo se reinició.
-        // =====================================================
+        // Las solicitudes con la misma huella se procesan de una en una en este
+        // servidor: la segunda ve la evidencia de la primera y no envía otra
+        // transacción. Entre varios servidores protege el rechazo del contrato.
+        var gate = HashLocks[Convert.ToByte(hash[..2], 16)];
 
-        var existingRecords = await _dbContext.Documents
-            .Where(document => document.Sha256 == hash)
-            .OrderBy(document => document.RegisteredAt)
-            .Select(document => document.Id)
-            .ToListAsync();
+        await gate.WaitAsync(HttpContext.RequestAborted);
 
-        if (existingRecords.Count > 0)
+        try
         {
-            // Si la red no responde, el duplicado en PostgreSQL basta para rechazar.
-            bool? registeredInBlockchain;
+            return await RegisterHashedAsync(userId.Value, file!, hash);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
-            try
-            {
-                registeredInBlockchain = await _blockchainService
-                    .IsDocumentRegisteredAsync(hash);
-            }
-            catch (ExternalServiceException)
-            {
-                registeredInBlockchain = null;
-            }
+    // 256 semáforos fijos, uno por primer byte de la huella: memoria acotada.
+    private static readonly SemaphoreSlim[] HashLocks =
+        Enumerable.Range(0, 256).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
-            return Conflict(new
-            {
-                message = registeredInBlockchain switch
-                {
-                    true => "Este documento ya está registrado.",
-                    false => "Este documento ya está registrado en PostgreSQL, pero su huella no aparece en la blockchain activa.",
-                    null => "Este documento ya está registrado. No se pudo consultar la blockchain para confirmar su estado."
-                },
-                code = "duplicate_document",
-                documentId = existingRecords[0],
-                sha256 = hash,
-                existsInDatabase = true,
-                databaseRecords = existingRecords.Count,
-                registeredInBlockchain
-            });
+    private async Task<ActionResult<RegisterDocumentResponseDto>> RegisterHashedAsync(
+        Guid userId,
+        IFormFile file,
+        string hash)
+    {
+        // =====================================================
+        // 2. DUPLICADO EN LA BIBLIOTECA DEL USUARIO (antes de la IA)
+        // Solo se mira la biblioteca propia: los documentos de otras
+        // personas no influyen en la respuesta.
+        // =====================================================
+
+        var ownExisting = await OwnDocuments(userId)
+            .Where(document => document.Sha256 == hash)
+            .Select(document => document.Id)
+            .FirstOrDefaultAsync();
+
+        if (ownExisting != Guid.Empty)
+        {
+            return DuplicateForUser(ownExisting, hash);
         }
 
-        // Si la red no responde, se detiene aquí (503) antes del análisis con IA.
+        // =====================================================
+        // 3. ¿LA HUELLA YA ESTÁ EN LA BLOCKCHAIN ACTIVA?
+        // Si la red no responde, se detiene aquí (503) antes de la IA.
+        // Si ya está, la evidencia se confirma ANTES de analizar y
+        // no se envía otra transacción.
+        // =====================================================
+
+        (string TransactionHash, long BlockNumber)? evidence = null;
+
         if (await _blockchainService.IsDocumentRegisteredAsync(hash))
         {
-            return Conflict(new
-            {
-                message =
-                    "La huella de este documento ya está registrada en la blockchain activa, pero no existe en PostgreSQL.",
-                code = "duplicate_document",
-                documentId = (Guid?)null,
-                sha256 = hash,
-                existsInDatabase = false,
-                databaseRecords = 0,
-                registeredInBlockchain = (bool?)true
-            });
+            evidence = await RequireConfirmedEvidenceAsync(hash);
         }
 
         // =====================================================
-        // 3. EXTRAER TEXTO DEL PDF
+        // 4. EXTRAER TEXTO DEL PDF
         // =====================================================
 
         var extractedText = await TryExtractTextAsync(file);
@@ -225,21 +307,39 @@ public class DocumentsController : ControllerBase
         }
 
         // =====================================================
-        // 4. ANALIZAR DOCUMENTO CON IA
+        // 5. ANALIZAR DOCUMENTO CON IA (siempre, para cada usuario)
         // =====================================================
 
         var analysis = await _aiService
             .AnalyzeDocumentAsync(extractedText);
 
         // =====================================================
-        // 5. REGISTRAR SHA-256 EN BLOCKCHAIN
+        // 6. REGISTRAR SHA-256 EN BLOCKCHAIN (solo si hace falta)
         // =====================================================
 
-        var blockchainResult = await _blockchainService
-            .RegisterDocumentAsync(hash);
+        var evidenceReused = evidence is not null;
+
+        if (evidence is null)
+        {
+            try
+            {
+                var receipt = await _blockchainService
+                    .RegisterDocumentAsync(hash);
+
+                evidence = (receipt.TransactionHash, receipt.BlockNumber);
+            }
+            catch (DocumentAlreadyOnChainException)
+            {
+                // Concurrencia: otra solicitud registró la misma huella entre la
+                // comprobación y el envío. Solo este rechazo específico del contrato
+                // lleva a reutilizar, y solo con la evidencia confirmada.
+                evidence = await RequireConfirmedEvidenceAsync(hash);
+                evidenceReused = true;
+            }
+        }
 
         // =====================================================
-        // 6. GUARDAR EN POSTGRESQL
+        // 7. GUARDAR EN POSTGRESQL, A NOMBRE DEL USUARIO
         // =====================================================
 
         var document = new Document
@@ -254,11 +354,15 @@ public class DocumentsController : ControllerBase
 
             RegisteredAt = DateTime.UtcNow,
 
+            RegisteredByUserId = userId,
+
+            BlockchainEvidenceReused = evidenceReused,
+
             BlockchainTransactionHash =
-                blockchainResult.TransactionHash,
+                evidence.Value.TransactionHash,
 
             BlockchainBlockNumber =
-                blockchainResult.BlockNumber,
+                evidence.Value.BlockNumber,
 
             AiDocumentType =
                 analysis.DocumentType,
@@ -277,10 +381,26 @@ public class DocumentsController : ControllerBase
 
         _dbContext.Documents.Add(document);
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsOwnerShaUniqueViolation(ex))
+        {
+            // Dos solicitudes simultáneas del mismo usuario con el mismo archivo:
+            // el índice único deja pasar solo una.
+            _dbContext.ChangeTracker.Clear();
+
+            var existingId = await OwnDocuments(userId)
+                .Where(existing => existing.Sha256 == hash)
+                .Select(existing => existing.Id)
+                .FirstAsync();
+
+            return DuplicateForUser(existingId, hash);
+        }
 
         // =====================================================
-        // 7. RESPUESTA COMPLETA
+        // 8. RESPUESTA COMPLETA
         // =====================================================
 
         var response = new RegisterDocumentResponseDto
@@ -301,7 +421,10 @@ public class DocumentsController : ControllerBase
                     document.BlockchainTransactionHash,
 
                 BlockNumber =
-                    document.BlockchainBlockNumber
+                    document.BlockchainBlockNumber,
+
+                EvidenceReused =
+                    document.BlockchainEvidenceReused
             },
 
             Analysis = new DocumentAnalysisDto
@@ -328,15 +451,24 @@ public class DocumentsController : ControllerBase
     // =========================================================
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Document>>> GetDocuments()
+    public async Task<ActionResult<IEnumerable<DocumentDto>>> GetDocuments()
     {
-        var documents = await _dbContext.Documents
+        var userId = await GetCurrentUserIdAsync();
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
+        // Solo la biblioteca del usuario. Los históricos sin propietario no aparecen.
+        var documents = await OwnDocuments(userId.Value)
+            .AsNoTracking()
             .OrderByDescending(
                 document => document.RegisteredAt
             )
             .ToListAsync();
 
-        return Ok(documents);
+        return Ok(documents.Select(DocumentDto.From));
     }
 
     // =========================================================
@@ -344,24 +476,28 @@ public class DocumentsController : ControllerBase
     // =========================================================
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<Document>> GetDocumentById(
+    public async Task<ActionResult<DocumentDto>> GetDocumentById(
         Guid id)
     {
-        var document = await _dbContext.Documents
+        var userId = await GetCurrentUserIdAsync();
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
+        var document = await OwnDocuments(userId.Value)
+            .AsNoTracking()
             .FirstOrDefaultAsync(
                 document => document.Id == id
             );
 
         if (document is null)
         {
-            return NotFound(new
-            {
-                message =
-                    "El documento registrado no fue encontrado."
-            });
+            return DocumentNotFound();
         }
 
-        return Ok(document);
+        return Ok(DocumentDto.From(document));
     }
 
     // =========================================================
@@ -372,7 +508,14 @@ public class DocumentsController : ControllerBase
     public async Task<ActionResult<BlockchainStatusDto>> GetBlockchainStatus(
         Guid id)
     {
-        var document = await _dbContext.Documents
+        var userId = await GetCurrentUserIdAsync();
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
+        var document = await OwnDocuments(userId.Value)
             .AsNoTracking()
             .FirstOrDefaultAsync(
                 document => document.Id == id
@@ -380,11 +523,7 @@ public class DocumentsController : ControllerBase
 
         if (document is null)
         {
-            return NotFound(new
-            {
-                message =
-                    "El documento registrado no fue encontrado."
-            });
+            return DocumentNotFound();
         }
 
         var chainId = await _blockchainService.GetChainIdAsync();
@@ -455,6 +594,13 @@ public class DocumentsController : ControllerBase
         Guid id,
         [FromForm] IFormFile? file)
     {
+        var userId = await GetCurrentUserIdAsync();
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
         var fileError = ValidateFile(file);
 
         if (fileError is not null)
@@ -465,18 +611,16 @@ public class DocumentsController : ControllerBase
             });
         }
 
-        var registeredDocument = await _dbContext.Documents
+        // Solo se verifica contra registros propios; uno ajeno da el mismo 404.
+        var registeredDocument = await OwnDocuments(userId.Value)
+            .AsNoTracking()
             .FirstOrDefaultAsync(
                 document => document.Id == id
             );
 
         if (registeredDocument is null)
         {
-            return NotFound(new
-            {
-                message =
-                    "El documento registrado no fue encontrado."
-            });
+            return DocumentNotFound();
         }
 
         string currentHash;

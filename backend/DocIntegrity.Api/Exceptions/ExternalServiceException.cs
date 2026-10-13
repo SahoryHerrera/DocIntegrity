@@ -3,7 +3,8 @@ namespace DocIntegrity.Api.Exceptions;
 public enum ExternalService
 {
     Ai,
-    Blockchain
+    Blockchain,
+    Identity
 }
 
 public enum ExternalFailure

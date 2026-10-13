@@ -66,6 +66,16 @@ public class BlockchainService : IBlockchainService
         ],
         "stateMutability": "view",
         "type": "function"
+      },
+      {
+        "anonymous": false,
+        "inputs": [
+          { "indexed": true, "internalType": "bytes32", "name": "documentHash", "type": "bytes32" },
+          { "indexed": false, "internalType": "uint256", "name": "registeredAt", "type": "uint256" },
+          { "indexed": true, "internalType": "address", "name": "registeredBy", "type": "address" }
+        ],
+        "name": "DocumentRegistered",
+        "type": "event"
       }
     ]
     """;
@@ -199,6 +209,75 @@ public class BlockchainService : IBlockchainService
             sentToContract,
             emitsDocumentHash
         );
+    }
+
+    public async Task<(string TransactionHash, long BlockNumber)?> FindConfirmedRegistrationAsync(
+        string sha256)
+    {
+        var web3 = CreateReadOnlyWeb3();
+
+        var registeredEvent = web3.Eth
+            .GetContract(ContractAbi, ContractAddress)
+            .GetEvent("DocumentRegistered");
+
+        // Bloque desde el que buscar (en redes públicas conviene el del despliegue).
+        var fromBlock = long.TryParse(
+            _configuration["Blockchain:DeploymentBlock"],
+            out var deploymentBlock)
+                ? new BlockParameter(new HexBigInteger(deploymentBlock))
+                : BlockParameter.CreateEarliest();
+
+        List<EventLog<DocumentRegisteredEventDto>> logs;
+
+        try
+        {
+            // Filtro explícito: topic0 = firma del evento, topic1 = la huella como bytes32.
+            // (Pasar el byte[] a CreateFilterInput lo trata como una lista de 32 valores
+            // y el filtro nunca coincide.)
+            var filter = new NewFilterInput
+            {
+                Address = [ContractAddress],
+                FromBlock = fromBlock,
+                ToBlock = BlockParameter.CreateLatest(),
+                Topics =
+                [
+                    "0x" + registeredEvent.EventABI.Sha3Signature,
+                    "0x" + sha256.ToLowerInvariant()
+                ]
+            };
+
+            logs = await registeredEvent
+                .GetAllChangesAsync<DocumentRegisteredEventDto>(filter);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+
+        // El contrato solo permite registrar una vez cada huella: se espera un único evento.
+        foreach (var log in logs)
+        {
+            var txHash = log.Log.TransactionHash;
+            var logBlock = (long?)log.Log.BlockNumber?.Value;
+
+            if (string.IsNullOrWhiteSpace(txHash) || logBlock is null)
+            {
+                continue;
+            }
+
+            var check = await CheckRegistrationTransactionAsync(txHash, sha256);
+
+            if (check.Found &&
+                check.Succeeded &&
+                check.SentToContract &&
+                check.EmitsDocumentHash &&
+                check.BlockNumber == logBlock)
+            {
+                return (txHash, logBlock.Value);
+            }
+        }
+
+        return null;
     }
 
     [FunctionOutput]

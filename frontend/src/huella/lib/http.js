@@ -39,6 +39,7 @@ const STATUS_TEXT = {
  */
 function messageFor(status, data) {
   if (data && typeof data.message === 'string' && data.message.trim()) return data.message.trim();
+  if (status === 403) return STATUS_TEXT[403];
   return STATUS_TEXT[status] || (status >= 500 ? STATUS_TEXT[500] : STATUS_TEXT[400]);
 }
 
@@ -63,6 +64,9 @@ export function createHttpClient({ baseUrl, getToken = () => null, timeoutMs = 3
     let body;
     if (form) body = form; // el navegador pone el multipart/form-data con su boundary
     else if (json !== undefined) { body = JSON.stringify(json); headers['Content-Type'] = 'application/json'; }
+    // Protección CSRF: el backend exige esta cabecera en las solicitudes que modifican datos.
+    if (method !== 'GET' && method !== 'HEAD') headers['X-Requested-With'] = 'Huella';
+    // Clientes de API: Bearer opcional. El navegador usa la cookie HttpOnly.
     const token = auth ? getToken() : null;
     if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -78,7 +82,8 @@ export function createHttpClient({ baseUrl, getToken = () => null, timeoutMs = 3
     try {
       let res; let parsed;
       try {
-        res = await fetch(`${baseUrl}${path}`, { method, headers, body, signal: ctrl.signal });
+        // credentials: 'include' envía la cookie de sesión (HttpOnly) a la API.
+        res = await fetch(`${baseUrl}${path}`, { method, headers, body, signal: ctrl.signal, credentials: 'include' });
         status = res.status;
         parsed = await readBody(res);
       } catch {

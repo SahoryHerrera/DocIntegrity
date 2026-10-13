@@ -22,4 +22,7 @@ public class BlockchainRegistrationDto
     public string TransactionHash { get; set; } = string.Empty;
 
     public long BlockNumber { get; set; }
+
+    // true si la huella ya estaba en la blockchain y se reutilizó esa transacción.
+    public bool EvidenceReused { get; set; }
 }

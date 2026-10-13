@@ -9,7 +9,7 @@ import { short } from '../lib/format.js';
 const go = (hash) => () => { location.hash = hash; };
 
 /* Paleta de comandos (Ctrl/⌘ + K). Busca en los documentos reales y en las acciones. */
-export default function CommandPalette({ onClose, onToggleTheme }) {
+export default function CommandPalette({ onClose, onToggleTheme, onLogout }) {
   const { items: documents } = useDocuments();
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState(0);
@@ -21,6 +21,7 @@ export default function CommandPalette({ onClose, onToggleTheme }) {
     { label: 'Ver actividad', ic: 'activity', run: go('#/actividad') },
     { label: 'Ajustes y sesión', ic: 'sliders', run: go('#/ajustes') },
     { label: 'Cambiar tema claro u oscuro', ic: 'moon', run: onToggleTheme },
+    { label: 'Cerrar sesión', ic: 'logout', run: onLogout },
   ];
   const term = q.trim().toLowerCase().replace(/^0x/, '');
   const docs = documents

@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { Icon } from '../components/Icon.jsx';
 import ServiceList from '../components/ServiceList.jsx';
 import { Kv, PageHead, Soon } from '../components/ui.jsx';
 import { API, APP, ENDPOINTS } from '../config.js';
 import { useRequestLog } from '../hooks/useRequestLog.js';
-import { fmtNum, fmtRel, plural } from '../lib/format.js';
+import { useToast } from '../hooks/useToast.js';
+import { fmtClock, fmtDate, fmtNum, fmtRel, initials, plural } from '../lib/format.js';
+import { authStore } from '../lib/session.js';
 
 const THEMES = [['system', 'Sistema'], ['light', 'Claro'], ['dark', 'Oscuro']];
 const shortGuid = (path) => path.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i, (m) => `${m.slice(0, 8)}…`);
@@ -32,22 +36,49 @@ function RequestLog() {
   );
 }
 
-export default function AjustesView({ theme }) {
+function SessionPanel({ auth }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  return (
+    <div className="panel">
+      <header className="panel-head"><h3>Sesión</h3><span className="jwt-status t-seal"><Icon name="check" />Validada por el servidor</span></header>
+      <Kv rows={[
+        ['Expira', <>{fmtDate(auth.expiresAt)} <span className="muted">(en <span className="tnum">{fmtClock(auth.expiresAt - now)}</span>)</span></>],
+        ['Duración', `${auth.sessionMinutes} minutos desde el inicio de sesión`],
+        ['Credencial', 'JWT del servidor en una cookie HttpOnly, Secure y SameSite=Strict. JavaScript no puede leerla, así que no se guarda en el navegador.'],
+        ['Protección CSRF', 'Las solicitudes que modifican datos solo se aceptan desde Huella y con la cabecera X-Requested-With.'],
+      ]} />
+    </div>
+  );
+}
+
+export default function AjustesView({ theme, auth }) {
+  const [confirm, setConfirm] = useState(false);
+  const toast = useToast();
+  const user = auth.user || {};
   return (
     <>
       <PageHead title="Ajustes" lede="Tu cuenta y tu sesión, el estado de los servicios y la API del sistema." />
       <div className="settings">
         <section className="set-sec" aria-labelledby="s-cuenta">
-          <div className="set-intro"><h2 id="s-cuenta">Cuenta y sesión</h2><p>Inicias sesión con Google. El servidor valida el ID token y emite su propio JWT, que acompaña cada solicitud.</p></div>
+          <div className="set-intro"><h2 id="s-cuenta">Cuenta y sesión</h2><p>Inicias sesión con Google. El servidor valida el ID token y emite su propio JWT, que viaja en una cookie que JavaScript no puede leer. Tu biblioteca de documentos es privada.</p></div>
           <div className="stack">
-            {/* La sesión real (POST /api/auth/google) se conecta en la etapa 6. */}
             <div className="panel profile">
-              <span className="avatar avatar-lg avatar-ghost"><Icon name="user" /></span>
-              <div><strong>Sin sesión</strong><p className="muted">Cuando inicies sesión verás aquí tu cuenta de Google y el vencimiento de tu token.</p></div>
-              <a className="btn btn-secondary" href="#/login"><Icon name="key" />Iniciar sesión</a>
+              <span className="avatar avatar-lg" aria-hidden="true">{initials(user.name)}</span>
+              <div><strong>{user.name}</strong><p className="muted">{user.email}, cuenta de Google</p></div>
+              <button className="btn btn-secondary" type="button" onClick={() => setConfirm(true)}><Icon name="logout" />Cerrar sesión</button>
             </div>
+            <SessionPanel auth={auth} />
           </div>
         </section>
+        {confirm && (
+          <ConfirmDialog
+            title="Cerrar sesión" confirm="Cerrar sesión"
+            text="Tendrás que iniciar sesión con Google de nuevo para ver tu biblioteca, registrar o verificar documentos."
+            onConfirm={async () => { await authStore.logout(); toast('Sesión cerrada.', 'ok'); }}
+            onClose={() => setConfirm(false)}
+          />
+        )}
 
         <section className="set-sec" aria-labelledby="s-serv">
           <div className="set-intro"><h2 id="s-serv">Servicios</h2><p>Componentes de la arquitectura por capas.</p></div>

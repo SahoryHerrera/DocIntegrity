@@ -67,9 +67,9 @@ function Result({ ver, docs, onUse, onAgain }) {
       <VerdictCard verdict={verdict} date={ver.at} animate />
       {verdict === 'distinto' && (other
         ? <Notice tone="info" icon="info" action={<button className="btn btn-sm btn-secondary" type="button" onClick={() => onUse(other.id)}>Usar ese registro</button>}>El archivo corresponde a <a className="link" href={`#/documentos/${other.id}`}>{docTitle(other)}</a>, registrado el {fmtDate(other.registeredAt)}.</Notice>
-        : <Notice tone="info" icon="info">La huella está en la blockchain activa, pero no hay ningún registro con ella en PostgreSQL.</Notice>)}
+        : <Notice tone="info" icon="info">La huella está en la blockchain activa, pero no corresponde a ningún documento de tu biblioteca.</Notice>)}
       {verdict === 'alterado' && other && (
-        <Notice tone="info" icon="info">El archivo coincide con otro registro de PostgreSQL, <a className="link" href={`#/documentos/${other.id}`}>{docTitle(other)}</a>, que tampoco tiene evidencia en la blockchain activa.</Notice>
+        <Notice tone="info" icon="info">El archivo coincide con otro documento de tu biblioteca, <a className="link" href={`#/documentos/${other.id}`}>{docTitle(other)}</a>, que tampoco tiene evidencia en la blockchain activa.</Notice>
       )}
       <div className="compare">
         <figure><Glyph hex={v.registeredSha256} size={156} /><figcaption>Huella registrada <span className="muted">H₀</span></figcaption></figure>

@@ -47,6 +47,9 @@ namespace DocIntegrity.Api.Migrations
                     b.Property<long>("BlockchainBlockNumber")
                         .HasColumnType("bigint");
 
+                    b.Property<bool>("BlockchainEvidenceReused")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("BlockchainTransactionHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -58,6 +61,9 @@ namespace DocIntegrity.Api.Migrations
                     b.Property<DateTime>("RegisteredAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("RegisteredByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasColumnType("text");
@@ -66,6 +72,13 @@ namespace DocIntegrity.Api.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RegisteredByUserId", "RegisteredAt");
+
+                    b.HasIndex("RegisteredByUserId", "Sha256")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Documents_Owner_Sha256")
+                        .HasFilter("\"RegisteredByUserId\" IS NOT NULL");
 
                     b.ToTable("Documents");
                 });
@@ -101,6 +114,16 @@ namespace DocIntegrity.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("DocIntegrity.Api.Models.Document", b =>
+                {
+                    b.HasOne("DocIntegrity.Api.Models.User", "RegisteredByUser")
+                        .WithMany()
+                        .HasForeignKey("RegisteredByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("RegisteredByUser");
                 });
 #pragma warning restore 612, 618
         }
