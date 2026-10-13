@@ -87,6 +87,29 @@ export function normalizeVerification(v) {
   };
 }
 
+/* BlockchainStatusDto de GET /api/documents/{id}/blockchain-status. */
+export function normalizeBlockchainStatus(s) {
+  const t = s.storedTransaction || {};
+  return {
+    documentId: s.documentId,
+    sha256: String(s.sha256 || '').toLowerCase(),
+    networkChainId: s.networkChainId,
+    contractAddress: s.contractAddress,
+    registeredInBlockchain: !!s.registeredInBlockchain,
+    onChainRegisteredAt: s.onChainRegisteredAt || null,
+    onChainRegisteredBy: text(s.onChainRegisteredBy),
+    storedTransactionHash: text(s.storedTransactionHash),
+    storedBlockNumber: s.storedBlockNumber ?? null,
+    storedTransactionConfirmed: !!s.storedTransactionConfirmed,
+    storedTransaction: {
+      status: t.status || 'not_stored', // not_stored | not_found | failed | mismatch | confirmed
+      foundInActiveChain: !!t.foundInActiveChain,
+      activeChainBlockNumber: t.activeChainBlockNumber ?? null,
+    },
+    checkedAt: s.checkedAt,
+  };
+}
+
 /* AuthResponseDto de POST /api/auth/google. */
 export function normalizeAuth(r) {
   const u = r.user || {};

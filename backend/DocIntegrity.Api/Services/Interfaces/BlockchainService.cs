@@ -1,5 +1,8 @@
+using System.Numerics;
 using DocIntegrity.Api.Exceptions;
 using DocIntegrity.Api.Services.Interfaces;
+using Nethereum.ABI.FunctionEncoding.Attributes;
+using Nethereum.Contracts;
 using Nethereum.Hex.HexTypes;
 using Nethereum.JsonRpc.Client;
 using Nethereum.RPC.Eth.DTOs;
@@ -45,6 +48,24 @@ public class BlockchainService : IBlockchainService
         ],
         "stateMutability": "view",
         "type": "function"
+      },
+      {
+        "inputs": [
+          {
+            "internalType": "bytes32",
+            "name": "documentHash",
+            "type": "bytes32"
+          }
+        ],
+        "name": "getDocument",
+        "outputs": [
+          { "internalType": "bytes32", "name": "", "type": "bytes32" },
+          { "internalType": "uint256", "name": "", "type": "uint256" },
+          { "internalType": "address", "name": "", "type": "address" },
+          { "internalType": "bool", "name": "", "type": "bool" }
+        ],
+        "stateMutability": "view",
+        "type": "function"
       }
     ]
     """;
@@ -52,6 +73,161 @@ public class BlockchainService : IBlockchainService
     public BlockchainService(IConfiguration configuration)
     {
         _configuration = configuration;
+    }
+
+    public string ContractAddress =>
+        _configuration["Blockchain:ContractAddress"] ?? string.Empty;
+
+    // =========================================================
+    // CONSULTAS DE SOLO LECTURA
+    // No usan la clave privada: no pueden firmar transacciones.
+    // =========================================================
+
+    private Web3 CreateReadOnlyWeb3()
+    {
+        var rpcUrl = _configuration["Blockchain:RpcUrl"];
+
+        if (string.IsNullOrWhiteSpace(rpcUrl) ||
+            string.IsNullOrWhiteSpace(ContractAddress))
+        {
+            throw new InvalidOperationException(
+                "La configuración de blockchain está incompleta."
+            );
+        }
+
+        return new Web3(rpcUrl);
+    }
+
+    public async Task<long> GetChainIdAsync()
+    {
+        var web3 = CreateReadOnlyWeb3();
+
+        try
+        {
+            var chainId = await web3.Eth.ChainId.SendRequestAsync();
+
+            return (long)chainId.Value;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+    }
+
+    public async Task<OnChainDocumentRecord> GetDocumentRecordAsync(
+        string sha256)
+    {
+        var web3 = CreateReadOnlyWeb3();
+
+        var function = web3.Eth
+            .GetContract(ContractAbi, ContractAddress)
+            .GetFunction("getDocument");
+
+        DocumentRecordOutput record;
+
+        try
+        {
+            record = await function
+                .CallDeserializingToObjectAsync<DocumentRecordOutput>(
+                    Convert.FromHexString(sha256)
+                );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+
+        if (!record.Exists)
+        {
+            return new OnChainDocumentRecord(false, null, null);
+        }
+
+        return new OnChainDocumentRecord(
+            true,
+            DateTimeOffset
+                .FromUnixTimeSeconds((long)record.RegisteredAt)
+                .UtcDateTime,
+            record.RegisteredBy
+        );
+    }
+
+    public async Task<StoredTransactionCheck> CheckRegistrationTransactionAsync(
+        string transactionHash,
+        string sha256)
+    {
+        var web3 = CreateReadOnlyWeb3();
+
+        TransactionReceipt? receipt;
+
+        try
+        {
+            receipt = await web3.Eth.Transactions.GetTransactionReceipt
+                .SendRequestAsync(transactionHash);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+
+        // La red activa no conoce la transacción.
+        if (receipt is null)
+        {
+            return new StoredTransactionCheck(false, false, null, false, false);
+        }
+
+        var sentToContract = string.Equals(
+            receipt.To,
+            ContractAddress,
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        var expectedHash = Convert.FromHexString(sha256);
+
+        var emitsDocumentHash = receipt
+            .DecodeAllEvents<DocumentRegisteredEventDto>()
+            .Any(e =>
+                string.Equals(
+                    e.Log.Address,
+                    ContractAddress,
+                    StringComparison.OrdinalIgnoreCase) &&
+                e.Event.DocumentHash.AsSpan().SequenceEqual(expectedHash));
+
+        return new StoredTransactionCheck(
+            true,
+            receipt.Status?.Value == 1,
+            (long?)receipt.BlockNumber?.Value,
+            sentToContract,
+            emitsDocumentHash
+        );
+    }
+
+    [FunctionOutput]
+    private sealed class DocumentRecordOutput : IFunctionOutputDTO
+    {
+        [Parameter("bytes32", "", 1)]
+        public byte[] DocumentHash { get; set; } = [];
+
+        [Parameter("uint256", "", 2)]
+        public BigInteger RegisteredAt { get; set; }
+
+        [Parameter("address", "", 3)]
+        public string RegisteredBy { get; set; } = string.Empty;
+
+        [Parameter("bool", "", 4)]
+        public bool Exists { get; set; }
+    }
+
+    [Event("DocumentRegistered")]
+    private sealed class DocumentRegisteredEventDto : IEventDTO
+    {
+        [Parameter("bytes32", "documentHash", 1, true)]
+        public byte[] DocumentHash { get; set; } = [];
+
+        [Parameter("uint256", "registeredAt", 2, false)]
+        public BigInteger RegisteredAt { get; set; }
+
+        [Parameter("address", "registeredBy", 3, true)]
+        public string RegisteredBy { get; set; } = string.Empty;
     }
 
     public async Task<(string TransactionHash, long BlockNumber)>

@@ -3,7 +3,7 @@
  * Cada una corresponde a una acción de AuthController o DocumentsController.
  */
 import { API } from '../config.js';
-import { normalizeAuth, normalizeDocument, normalizeRegistration, normalizeVerification } from './adapters.js';
+import { normalizeAuth, normalizeBlockchainStatus, normalizeDocument, normalizeRegistration, normalizeVerification } from './adapters.js';
 import { createHttpClient } from './http.js';
 import { requestLog } from './requestLog.js';
 import { getValidToken } from './session.js';
@@ -36,6 +36,8 @@ export function createApi(request) {
       list: async (opts) => (await request('GET', '/api/documents', opts) || []).map(normalizeDocument),
       /* GET /api/documents/{id} → Document */
       get: async (id, opts) => normalizeDocument(await request('GET', docPath(id), opts)),
+      /* GET /api/documents/{id}/blockchain-status → BlockchainStatusDto (lectura de la cadena activa, sin gas) */
+      blockchainStatus: async (id, opts) => normalizeBlockchainStatus(await request('GET', `${docPath(id)}/blockchain-status`, opts)),
       /* POST /api/documents/register (file) → RegisterDocumentResponseDto */
       register: async (file, opts) => normalizeRegistration(await request('POST', '/api/documents/register', { form: fileForm(file), timeoutMs: API.longTimeoutMs, ...opts })),
       /* POST /api/documents/{id}/verify (file) → VerifyResponseDto */

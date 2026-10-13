@@ -365,6 +365,88 @@ public class DocumentsController : ControllerBase
     }
 
     // =========================================================
+    // ESTADO EN LA BLOCKCHAIN ACTIVA (SOLO LECTURA, SIN GAS)
+    // =========================================================
+
+    [HttpGet("{id:guid}/blockchain-status")]
+    public async Task<ActionResult<BlockchainStatusDto>> GetBlockchainStatus(
+        Guid id)
+    {
+        var document = await _dbContext.Documents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                document => document.Id == id
+            );
+
+        if (document is null)
+        {
+            return NotFound(new
+            {
+                message =
+                    "El documento registrado no fue encontrado."
+            });
+        }
+
+        var chainId = await _blockchainService.GetChainIdAsync();
+
+        var record = await _blockchainService
+            .GetDocumentRecordAsync(document.Sha256);
+
+        var storedTransactionHash =
+            string.IsNullOrWhiteSpace(document.BlockchainTransactionHash)
+                ? null
+                : document.BlockchainTransactionHash;
+
+        long? storedBlockNumber = storedTransactionHash is null
+            ? null
+            : document.BlockchainBlockNumber;
+
+        var storedTransaction = new StoredTransactionStatusDto();
+
+        if (storedTransactionHash is not null)
+        {
+            var check = await _blockchainService
+                .CheckRegistrationTransactionAsync(
+                    storedTransactionHash,
+                    document.Sha256);
+
+            storedTransaction = new StoredTransactionStatusDto
+            {
+                FoundInActiveChain = check.Found,
+                Succeeded = check.Found ? check.Succeeded : null,
+                ActiveChainBlockNumber = check.BlockNumber,
+                SentToContract = check.Found ? check.SentToContract : null,
+                EmitsDocumentHash = check.Found ? check.EmitsDocumentHash : null,
+                Status =
+                    !check.Found ? "not_found"
+                    : !check.Succeeded ? "failed"
+                    : check.SentToContract &&
+                      check.EmitsDocumentHash &&
+                      check.BlockNumber == storedBlockNumber
+                        ? "confirmed"
+                        : "mismatch"
+            };
+        }
+
+        return Ok(new BlockchainStatusDto
+        {
+            DocumentId = document.Id,
+            Sha256 = document.Sha256,
+            NetworkChainId = chainId,
+            ContractAddress = _blockchainService.ContractAddress,
+            RegisteredInBlockchain = record.Exists,
+            OnChainRegisteredAt = record.RegisteredAt,
+            OnChainRegisteredBy = record.RegisteredBy,
+            StoredTransactionHash = storedTransactionHash,
+            StoredBlockNumber = storedBlockNumber,
+            StoredTransactionConfirmed =
+                storedTransaction.Status == "confirmed",
+            StoredTransaction = storedTransaction,
+            CheckedAt = DateTime.UtcNow
+        });
+    }
+
+    // =========================================================
     // VERIFICAR INTEGRIDAD
     // =========================================================
 
@@ -432,6 +514,12 @@ public class DocumentsController : ControllerBase
 
             CurrentSha256 =
                 currentHash,
+
+            HashMatches =
+                hashMatches,
+
+            RegisteredInBlockchain =
+                currentHashRegisteredInBlockchain,
 
             IsValid =
                 isValid,

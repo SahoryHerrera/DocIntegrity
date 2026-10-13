@@ -9,17 +9,29 @@ export function useDocuments() {
   return { ...state, reload: documentsStore.load };
 }
 
-/* Detalle de un documento, siempre pedido a GET /api/documents/{id}. */
-export function useDocument(id) {
-  const [state, setState] = useState({ status: 'loading', doc: null, error: null });
+/* Pide un recurso por id con cancelación y reintento. */
+function useResource(fetcher, id) {
+  const [state, setState] = useState({ status: 'loading', data: null, error: null });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const ctrl = new AbortController();
-    api.documents.get(id, { signal: ctrl.signal })
-      .then((doc) => setState({ status: 'ready', doc, error: null }))
-      .catch((error) => { if (error.kind !== 'aborted') setState({ status: 'error', doc: null, error }); });
+    fetcher(id, { signal: ctrl.signal })
+      .then((data) => setState({ status: 'ready', data, error: null }))
+      .catch((error) => { if (error.kind !== 'aborted') setState({ status: 'error', data: null, error }); });
     return () => ctrl.abort();
-  }, [id, attempt]);
-  const retry = () => { setState({ status: 'loading', doc: null, error: null }); setAttempt((n) => n + 1); };
+  }, [fetcher, id, attempt]);
+  const retry = () => { setState({ status: 'loading', data: null, error: null }); setAttempt((n) => n + 1); };
   return { ...state, retry };
+}
+
+/* Detalle de un documento, siempre pedido a GET /api/documents/{id}. */
+export function useDocument(id) {
+  const { data, ...rest } = useResource(api.documents.get, id);
+  return { ...rest, doc: data };
+}
+
+/* Estado de la huella en la blockchain activa, consultado en el momento. */
+export function useBlockchainStatus(id) {
+  const { data, ...rest } = useResource(api.documents.blockchainStatus, id);
+  return { ...rest, chain: data };
 }
