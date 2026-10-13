@@ -1,5 +1,6 @@
 using System.Text;
 using DocIntegrity.Api.Data;
+using DocIntegrity.Api.Middleware;
 using DocIntegrity.Api.Services;
 using DocIntegrity.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -13,6 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 // =========================================================
 
 builder.Services.AddControllers();
+
+// =========================================================
+// ERRORES - RESPUESTAS JSON SEGURAS
+// =========================================================
+
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+
+builder.Services.AddProblemDetails();
 
 // =========================================================
 // OPENAPI
@@ -156,6 +165,8 @@ if (app.Environment.IsDevelopment())
 // =========================================================
 // MIDDLEWARE
 // =========================================================
+
+app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
 

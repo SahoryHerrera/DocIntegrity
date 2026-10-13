@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using DocIntegrity.Api.DTOs;
+using DocIntegrity.Api.Exceptions;
 using DocIntegrity.Api.Services.Interfaces;
 
 namespace DocIntegrity.Api.Services;
@@ -96,18 +97,46 @@ public class OllamaAiService : IAiService
             }
         };
 
-        var response = await _httpClient.PostAsJsonAsync(
-            "/api/chat",
-            request
-        );
+        HttpResponseMessage response;
+
+        try
+        {
+            response = await _httpClient.PostAsJsonAsync(
+                "/api/chat",
+                request
+            );
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ExternalServiceException(
+                ExternalService.Ai,
+                ExternalFailure.Unavailable,
+                "El modelo de IA (Ollama) no está disponible. Comprueba que Ollama esté en ejecución.",
+                ex
+            );
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new ExternalServiceException(
+                ExternalService.Ai,
+                ExternalFailure.Timeout,
+                "El modelo de IA (Ollama) tardó demasiado en responder.",
+                ex
+            );
+        }
 
         if (!response.IsSuccessStatusCode)
         {
             var errorContent =
                 await response.Content.ReadAsStringAsync();
 
-            throw new InvalidOperationException(
-                $"Ollama devolvió el código {(int)response.StatusCode}: {errorContent}"
+            throw new ExternalServiceException(
+                ExternalService.Ai,
+                ExternalFailure.Rejected,
+                "El modelo de IA (Ollama) no pudo analizar el documento.",
+                new InvalidOperationException(
+                    $"Ollama devolvió el código {(int)response.StatusCode}: {errorContent}"
+                )
             );
         }
 
@@ -117,14 +146,28 @@ public class OllamaAiService : IAiService
         if (ollamaResponse?.Message is null ||
             string.IsNullOrWhiteSpace(ollamaResponse.Message.Content))
         {
-            throw new InvalidOperationException(
+            throw new ExternalServiceException(
+                ExternalService.Ai,
+                ExternalFailure.Rejected,
                 "Ollama no devolvió un análisis válido."
             );
         }
 
-        return ParseAnalysis(
-            ollamaResponse.Message.Content
-        );
+        try
+        {
+            return ParseAnalysis(
+                ollamaResponse.Message.Content
+            );
+        }
+        catch (JsonException ex)
+        {
+            throw new ExternalServiceException(
+                ExternalService.Ai,
+                ExternalFailure.Rejected,
+                "El modelo de IA devolvió un análisis con un formato inválido.",
+                ex
+            );
+        }
     }
 
     private static DocumentAnalysisDto ParseAnalysis(

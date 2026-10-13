@@ -1,5 +1,8 @@
+using DocIntegrity.Api.Exceptions;
 using DocIntegrity.Api.Services.Interfaces;
 using Nethereum.Hex.HexTypes;
+using Nethereum.JsonRpc.Client;
+using Nethereum.RPC.Eth.DTOs;
 using Nethereum.Web3;
 using Nethereum.Web3.Accounts;
 
@@ -87,14 +90,32 @@ public class BlockchainService : IBlockchainService
         var hashBytes =
             Convert.FromHexString(sha256);
 
-        var receipt =
-            await function.SendTransactionAndWaitForReceiptAsync(
-                account.Address,
-                new HexBigInteger(300000),
-                null,
-                null,
-                hashBytes
+        TransactionReceipt receipt;
+
+        try
+        {
+            receipt =
+                await function.SendTransactionAndWaitForReceiptAsync(
+                    account.Address,
+                    new HexBigInteger(300000),
+                    null,
+                    null,
+                    hashBytes
+                );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+
+        if (receipt.Status?.Value == 0)
+        {
+            throw new ExternalServiceException(
+                ExternalService.Blockchain,
+                ExternalFailure.Rejected,
+                "La transacción de registro fue revertida por la red blockchain."
             );
+        }
 
         return (
             receipt.TransactionHash,
@@ -140,9 +161,75 @@ public class BlockchainService : IBlockchainService
         var hashBytes =
             Convert.FromHexString(sha256);
 
-        return await function.CallAsync<bool>(
-            hashBytes
+        try
+        {
+            return await function.CallAsync<bool>(
+                hashBytes
+            );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || ex.InnerException is TimeoutException)
+        {
+            throw Translate(ex);
+        }
+    }
+
+    // Traduce los errores de Nethereum a errores seguros para el usuario.
+    // El detalle técnico se conserva como InnerException para el log.
+    private static Exception Translate(Exception ex)
+    {
+        var detail = string.Join(
+            " | ",
+            EnumerateChain(ex).Select(e => e.Message)
         );
+
+        if (detail.Contains(
+                "Document already registered",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new DocumentAlreadyOnChainException(ex);
+        }
+
+        if (EnumerateChain(ex).Any(e =>
+                e is RpcClientTimeoutException ||
+                e is TimeoutException))
+        {
+            return new ExternalServiceException(
+                ExternalService.Blockchain,
+                ExternalFailure.Timeout,
+                "La red blockchain tardó demasiado en responder.",
+                ex
+            );
+        }
+
+        if (EnumerateChain(ex).Any(e =>
+                e is RpcClientUnknownException ||
+                e is HttpRequestException ||
+                e is System.Net.Sockets.SocketException))
+        {
+            return new ExternalServiceException(
+                ExternalService.Blockchain,
+                ExternalFailure.Unavailable,
+                "La red blockchain no está disponible. Comprueba que el nodo de Hardhat esté en ejecución.",
+                ex
+            );
+        }
+
+        return new ExternalServiceException(
+            ExternalService.Blockchain,
+            ExternalFailure.Rejected,
+            "La red blockchain rechazó la operación. Comprueba que el contrato esté desplegado en la dirección configurada.",
+            ex
+        );
+    }
+
+    private static IEnumerable<Exception> EnumerateChain(Exception ex)
+    {
+        for (Exception? current = ex;
+             current is not null;
+             current = current.InnerException)
+        {
+            yield return current;
+        }
     }
 
     private static void ValidateConfiguration(

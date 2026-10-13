@@ -11,6 +11,9 @@
 .tabs button[disabled]:hover { color: var(--ink-2); }
 .chip-soon { vertical-align: middle; }
 
+/* Registro: separación entre la tarjeta del archivo y lo que sigue. */
+.reg-left > .file-card + .notice, .reg-left > .file-card + .field-hint { margin-top: 14px; }
+
 /* Aviso de datos históricos de blockchain dentro del pie de un panel. */
 .panel-foot .notice { margin: 0; }
 .empty > .spinner { width: 22px; height: 22px; color: var(--ink-3); }
