@@ -3,6 +3,7 @@ using DocIntegrity.Api.Auth;
 using DocIntegrity.Api.Data;
 using DocIntegrity.Api.Middleware;
 using DocIntegrity.Api.Services;
+using DocIntegrity.Api.Services.Comparison;
 using DocIntegrity.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -83,6 +84,19 @@ builder.Services.AddScoped<
     IJwtService,
     JwtService
 >();
+
+// =========================================================
+// COMPARACIÓN DE VERSIONES (determinista, sin IA ni blockchain)
+// =========================================================
+
+builder.Services.Configure<ComparisonOptions>(
+    builder.Configuration.GetSection(ComparisonOptions.SectionName));
+
+builder.Services.AddSingleton<ComparisonGate>();
+
+builder.Services.AddSingleton<IPdfPageExtractor, PdfPageExtractor>();
+
+builder.Services.AddScoped<IDocumentComparisonService, DocumentComparisonService>();
 
 // =========================================================
 // ARTIFICIAL INTELLIGENCE - OLLAMA

@@ -4,6 +4,7 @@ using DocIntegrity.Api.Data;
 using DocIntegrity.Api.DTOs;
 using DocIntegrity.Api.Exceptions;
 using DocIntegrity.Api.Models;
+using DocIntegrity.Api.Services;
 using DocIntegrity.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -116,61 +117,16 @@ public class DocumentsController : ControllerBase
         };
 
     // =========================================================
-    // VALIDACIÓN DE ARCHIVOS
+    // VALIDACIÓN DE ARCHIVOS (PdfFileValidator, compartido)
     // El parámetro es IFormFile? para responder nosotros con
     // { message } en lugar del error de validación automático.
     // =========================================================
 
-    private static string? ValidateFile(IFormFile? file)
-    {
-        if (file is null)
-        {
-            return "Debes enviar un archivo en el campo \"file\".";
-        }
+    private static string? ValidateFile(IFormFile? file) =>
+        PdfFileValidator.ValidateFile(file)?.Message;
 
-        if (file.Length == 0)
-        {
-            return "El archivo está vacío.";
-        }
-
-        return null;
-    }
-
-    private static async Task<string?> ValidatePdfAsync(IFormFile? file)
-    {
-        var error = ValidateFile(file);
-
-        if (error is not null)
-        {
-            return error;
-        }
-
-        if (!string.Equals(
-                Path.GetExtension(file!.FileName),
-                ".pdf",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return "Actualmente solo se admiten archivos PDF.";
-        }
-
-        // Un PDF válido contiene la firma %PDF- al inicio del archivo.
-        var header = new byte[1024];
-        int read;
-
-        await using (var stream = file.OpenReadStream())
-        {
-            read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
-        }
-
-        var signature = "%PDF-"u8;
-
-        if (header.AsSpan(0, read).IndexOf(signature) < 0)
-        {
-            return "El archivo no es un PDF válido.";
-        }
-
-        return null;
-    }
+    private static async Task<string?> ValidatePdfAsync(IFormFile? file) =>
+        (await PdfFileValidator.ValidatePdfAsync(file))?.Message;
 
     private async Task<string?> TryExtractTextAsync(IFormFile file)
     {
