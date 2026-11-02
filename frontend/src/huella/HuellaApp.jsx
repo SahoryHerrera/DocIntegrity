@@ -26,7 +26,7 @@ const VIEWS = {
   registrar: { title: 'Registrar documento', render: () => <RegistrarView /> },
   documentos: { title: 'Documentos', render: (arg) => (arg ? <DocumentoDetalleView id={arg} /> : <DocumentosView />) },
   verificar: { title: 'Verificar documento', render: (arg) => <VerificarView id={arg} /> },
-  comparar: { title: 'Comparar versiones', render: () => <CompararView /> },
+  comparar: { title: 'Comparar versiones', render: (arg) => <CompararView id={arg} /> },
   cadena: { title: 'Blockchain', render: () => <CadenaView /> },
   actividad: { title: 'Actividad', render: () => <ActividadView /> },
   ajustes: { title: 'Ajustes', render: (arg, ctx) => <AjustesView theme={ctx.theme} auth={ctx.auth} /> },

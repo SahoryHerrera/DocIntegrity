@@ -76,6 +76,9 @@ builder.Services.AddScoped<
     BlockchainService
 >();
 
+// Estado en la cadena activa (solo lectura): detalle del documento y comparación con la biblioteca.
+builder.Services.AddScoped<BlockchainStatusReader>();
+
 builder.Services.AddScoped<
     IDocumentTextExtractorService,
     PdfTextExtractorService
@@ -87,7 +90,8 @@ builder.Services.AddScoped<
 >();
 
 // =========================================================
-// COMPARACIÓN DE VERSIONES (determinista, sin IA ni blockchain)
+// COMPARACIÓN DE VERSIONES (determinista, sin IA ni blockchain;
+// la comparación con la biblioteca solo LEE la cadena, como dato informativo)
 // =========================================================
 
 builder.Services.Configure<ComparisonOptions>(

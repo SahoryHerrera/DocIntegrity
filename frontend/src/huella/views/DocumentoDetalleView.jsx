@@ -97,7 +97,10 @@ export default function DocumentoDetalleView({ id }) {
         title={docTitle(d)}
         lede={`${d.fileName}, ${fmtBytes(d.size)}`}
         back={back}
-        actions={<a className="btn btn-primary" href={`#/verificar/${d.id}`}><Icon name="shield" />Verificar este documento</a>}
+        actions={<>
+          <a className="btn btn-secondary" href={`#/comparar/${d.id}`}><Icon name="compare" />Comparar con una nueva versión</a>
+          <a className="btn btn-primary" href={`#/verificar/${d.id}`}><Icon name="shield" />Verificar este documento</a>
+        </>}
       />
       <div className="cols cols-detail">
         <aside className="detail-glyph">

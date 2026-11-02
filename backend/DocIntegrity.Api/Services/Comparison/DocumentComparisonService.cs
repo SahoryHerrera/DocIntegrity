@@ -4,7 +4,8 @@ using Microsoft.Extensions.Options;
 
 namespace DocIntegrity.Api.Services.Comparison;
 
-public sealed record ComparisonInput(string FileName, byte[] Content);
+// Sha256: huella ya calculada por el llamador (en minúsculas, como HashService); evita calcularla otra vez.
+public sealed record ComparisonInput(string FileName, byte[] Content, string? Sha256 = null);
 
 public interface IDocumentComparisonService
 {
@@ -267,7 +268,7 @@ public class DocumentComparisonService : IDocumentComparisonService
     {
         FileName = Path.GetFileName(input.FileName),
         Size = input.Content.LongLength,
-        Sha256 = await _hashService.CalculateSha256Async(new MemoryStream(input.Content, writable: false))
+        Sha256 = input.Sha256 ?? await _hashService.CalculateSha256Async(new MemoryStream(input.Content, writable: false))
     };
 
     private static void Describe(ComparisonFileDto file, ExtractedDocument document, int words)

@@ -12,6 +12,10 @@ public class ComparisonResultDto
 
     public bool ExplanationAvailable { get; set; }
 
+    // Solo al comparar con un documento de la biblioteca: el registro, la comprobación
+    // de su huella y su estado (informativo) en la blockchain. No influye en el veredicto.
+    public RegisteredComparisonDocumentDto? RegisteredDocument { get; set; }
+
     // identical | same_text | modified | not_comparable
     public string Verdict { get; set; } = string.Empty;
 

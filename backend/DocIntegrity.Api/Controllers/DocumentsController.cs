@@ -24,6 +24,7 @@ public class DocumentsController : ControllerBase
     private readonly IBlockchainService _blockchainService;
     private readonly IDocumentTextExtractorService _textExtractorService;
     private readonly IAiService _aiService;
+    private readonly BlockchainStatusReader _blockchainStatusReader;
     private readonly AppDbContext _dbContext;
     private readonly ILogger<DocumentsController> _logger;
 
@@ -32,6 +33,7 @@ public class DocumentsController : ControllerBase
         IBlockchainService blockchainService,
         IDocumentTextExtractorService textExtractorService,
         IAiService aiService,
+        BlockchainStatusReader blockchainStatusReader,
         AppDbContext dbContext,
         ILogger<DocumentsController> logger)
     {
@@ -39,6 +41,7 @@ public class DocumentsController : ControllerBase
         _blockchainService = blockchainService;
         _textExtractorService = textExtractorService;
         _aiService = aiService;
+        _blockchainStatusReader = blockchainStatusReader;
         _dbContext = dbContext;
         _logger = logger;
     }
@@ -482,63 +485,7 @@ public class DocumentsController : ControllerBase
             return DocumentNotFound();
         }
 
-        var chainId = await _blockchainService.GetChainIdAsync();
-
-        var record = await _blockchainService
-            .GetDocumentRecordAsync(document.Sha256);
-
-        var storedTransactionHash =
-            string.IsNullOrWhiteSpace(document.BlockchainTransactionHash)
-                ? null
-                : document.BlockchainTransactionHash;
-
-        long? storedBlockNumber = storedTransactionHash is null
-            ? null
-            : document.BlockchainBlockNumber;
-
-        var storedTransaction = new StoredTransactionStatusDto();
-
-        if (storedTransactionHash is not null)
-        {
-            var check = await _blockchainService
-                .CheckRegistrationTransactionAsync(
-                    storedTransactionHash,
-                    document.Sha256);
-
-            storedTransaction = new StoredTransactionStatusDto
-            {
-                FoundInActiveChain = check.Found,
-                Succeeded = check.Found ? check.Succeeded : null,
-                ActiveChainBlockNumber = check.BlockNumber,
-                SentToContract = check.Found ? check.SentToContract : null,
-                EmitsDocumentHash = check.Found ? check.EmitsDocumentHash : null,
-                Status =
-                    !check.Found ? "not_found"
-                    : !check.Succeeded ? "failed"
-                    : check.SentToContract &&
-                      check.EmitsDocumentHash &&
-                      check.BlockNumber == storedBlockNumber
-                        ? "confirmed"
-                        : "mismatch"
-            };
-        }
-
-        return Ok(new BlockchainStatusDto
-        {
-            DocumentId = document.Id,
-            Sha256 = document.Sha256,
-            NetworkChainId = chainId,
-            ContractAddress = _blockchainService.ContractAddress,
-            RegisteredInBlockchain = record.Exists,
-            OnChainRegisteredAt = record.RegisteredAt,
-            OnChainRegisteredBy = record.RegisteredBy,
-            StoredTransactionHash = storedTransactionHash,
-            StoredBlockNumber = storedBlockNumber,
-            StoredTransactionConfirmed =
-                storedTransaction.Status == "confirmed",
-            StoredTransaction = storedTransaction,
-            CheckedAt = DateTime.UtcNow
-        });
+        return Ok(await _blockchainStatusReader.ReadAsync(document));
     }
 
     // =========================================================

@@ -1,8 +1,21 @@
 /*
- * Comparación de versiones (POST /api/comparisons). El veredicto lo decide el
+ * Comparación de versiones (POST /api/comparisons y, con un documento de la
+ * biblioteca, POST /api/comparisons/documents/{id}). El veredicto lo decide el
  * backend con las huellas SHA-256 y un diff determinista del texto extraído;
  * aquí solo se presenta. Nada de este módulo interpreta texto con IA.
  */
+import { normalizeBlockchainStatus } from './adapters.js';
+
+/*
+ * Estado informativo del registro en la blockchain activa. Es una pregunta distinta
+ * de si el original coincide con la huella guardada en PostgreSQL: una cosa no implica la otra.
+ */
+export const REGISTERED_CHAIN = {
+  confirmed: { tone: 'seal', icon: 'check', label: 'Confirmado en la blockchain activa' },
+  not_registered: { tone: 'warn', icon: 'alert', label: 'Sin registro en la blockchain activa' },
+  unconfirmed: { tone: 'warn', icon: 'alert', label: 'Huella en el contrato, transacción sin confirmar' },
+  unavailable: { tone: 'neutral', icon: 'info', label: 'Blockchain no disponible' },
+};
 
 export const COMPARISON_VERDICTS = {
   identical: {
@@ -115,11 +128,31 @@ export const locationText = (side) => {
   return side.insertionPoint ? `${where} (posición)` : where;
 };
 
+/* Documento de la biblioteca con el que se comparó (null en la comparación libre). */
+function normalizeRegistered(d) {
+  if (!d) return null;
+  const b = d.blockchain || {};
+  return {
+    ...d,
+    sha256: String(d.sha256 || '').toLowerCase(),
+    originalMatchesRegisteredSha256: !!d.originalMatchesRegisteredSha256,
+    blockchain: {
+      // Sin un estado conocido no se presume nada: se trata como no disponible.
+      status: REGISTERED_CHAIN[b.status] ? b.status : 'unavailable',
+      message: typeof b.message === 'string' ? b.message : '',
+      failureCode: b.failureCode || null,
+      detail: b.detail ? normalizeBlockchainStatus(b.detail) : null,
+      checkedAt: b.checkedAt || null,
+    },
+  };
+}
+
 /* Normaliza la respuesta: listas siempre presentes y huellas en minúsculas. */
 export function normalizeComparison(r) {
   const file = (f = {}) => ({ ...f, sha256: String(f.sha256 || '').toLowerCase() });
   return {
     ...r,
+    registeredDocument: normalizeRegistered(r.registeredDocument),
     files: { original: file(r.files?.original), modified: file(r.files?.modified) },
     changes: Array.isArray(r.changes) ? r.changes : [],
     warnings: Array.isArray(r.warnings) ? r.warnings : [],
@@ -142,6 +175,8 @@ export function comparisonErrorText(e, totalBytes, maxFileMB) {
     ? 'La solicitud fue rechazada por la protección contra CSRF. Recarga la página e inténtalo de nuevo.'
     : 'No tienes permiso para realizar esta acción.';
   if (e?.status === 413) return e.message || `Uno de los archivos supera el máximo de ${maxFileMB} MB.`;
+  if (code === 'document_not_found') return 'El documento registrado no existe en tu biblioteca.';
+  if (code === 'original_hash_mismatch') return 'El archivo original no es el documento registrado: su SHA-256 no coincide con la huella guardada. No se hizo la comparación.';
   if (e?.status === 503 && code === 'comparison_busy') return 'Hay demasiadas comparaciones en curso. Espera unos segundos e inténtalo de nuevo.';
   return e?.message || 'No se pudo comparar los documentos.';
 }

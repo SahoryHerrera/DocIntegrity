@@ -46,6 +46,11 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
     public TimeProvider? Time { get; init; }
     public int MaxConcurrentExplanations { get; init; } = 1;
     public double ExplanationQueueTimeoutSeconds { get; init; } = 3;
+    // Comparación con la biblioteca: sustituto de la blockchain (solo lectura) y documentos ficticios.
+    // Sin Blockchain, cualquier uso de IBlockchainService falla, como en la comparación libre.
+    public IBlockchainService? Blockchain { get; init; }
+    public double BlockchainCheckTimeoutSeconds { get; init; } = 10;
+    public IReadOnlyList<Document> Documents { get; init; } = [];
 
     public HttpClient Start()
     {
@@ -65,6 +70,7 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
                     Id = OtherFictitiousUser, GoogleId = "google-ficticio-2", Email = "otro@ejemplo.test",
                     Name = "Otro usuario ficticio", CreatedAt = DateTime.UtcNow, LastLoginAt = DateTime.UtcNow
                 });
+            db.Documents.AddRange(Documents);
             db.SaveChanges();
         }
 
@@ -84,12 +90,21 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
             services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(_database, _root).AddInterceptors(Writes));
 
             services.RemoveAll<IBlockchainService>();
-            services.AddScoped<IBlockchainService>(_ => throw new InvalidOperationException("La comparación no debe usar la blockchain."));
+
+            if (Blockchain is not null)
+            {
+                services.AddSingleton(Blockchain);
+            }
+            else
+            {
+                services.AddScoped<IBlockchainService>(_ => throw new InvalidOperationException("La comparación no debe usar la blockchain."));
+            }
 
             services.Configure<ComparisonOptions>(options =>
             {
                 options.MaxConcurrentComparisons = MaxConcurrentComparisons;
                 options.QueueTimeoutSeconds = QueueTimeoutSeconds;
+                options.BlockchainCheckTimeoutSeconds = BlockchainCheckTimeoutSeconds;
             });
 
             services.Configure<ExplanationOptions>(options =>

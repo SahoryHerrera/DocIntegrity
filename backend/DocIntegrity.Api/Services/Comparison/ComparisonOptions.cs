@@ -38,4 +38,9 @@ public class ComparisonOptions
     public int MaxChangeTextLength { get; set; } = 1_000;
 
     public int ContextWords { get; set; } = 8;
+
+    // Comparación con un documento de la biblioteca: tiempo máximo de la consulta
+    // informativa a la blockchain. Pasado este tiempo se informa "unavailable" y la
+    // comparación se entrega igualmente.
+    public double BlockchainCheckTimeoutSeconds { get; set; } = 10;
 }

@@ -58,6 +58,15 @@ export function createApi(request) {
         form.append('modified', modified, modified.name || 'nueva.pdf');
         return normalizeComparison(await request('POST', '/api/comparisons', { form, timeoutMs: API.comparisonTimeoutMs, ...opts }));
       },
+      /* POST /api/comparisons/documents/{id} (original, modified) → ComparisonResultDto con registeredDocument.
+         El backend verifica primero que el original tenga la huella registrada (422 original_hash_mismatch);
+         consulta la blockchain solo en lectura y no registra la nueva versión. */
+      compareRegistered: async (id, original, modified, opts) => {
+        const form = new FormData();
+        form.append('original', original, original.name || 'original.pdf');
+        form.append('modified', modified, modified.name || 'nueva.pdf');
+        return normalizeComparison(await request('POST', `/api/comparisons/documents/${encodeURIComponent(id)}`, { form, timeoutMs: API.comparisonTimeoutMs, ...opts }));
+      },
       /* POST /api/comparisons/{id}/explanation → ComparisonExplanationDto. Interpretación con IA; no altera la comparación. */
       explain: async (id, opts) => normalizeExplanation(await request('POST', `/api/comparisons/${encodeURIComponent(id)}/explanation`, { timeoutMs: API.explanationTimeoutMs, ...opts })),
     },
