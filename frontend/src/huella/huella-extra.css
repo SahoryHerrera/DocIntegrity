@@ -32,3 +32,45 @@
 .empty > .spinner { width: 22px; height: 22px; color: var(--ink-3); }
 .empty > .spinner + .empty-text { margin-top: 12px; }
 .login-fine .chip-soon { margin-right: 4px; }
+
+/* ---------- Comparar versiones (etapa 7) ---------- */
+.cmp-hash { display: grid; gap: 4px; margin-top: 10px; }
+.cmp-hash .hash { margin: 0; }
+.cmp-results { display: grid; gap: 18px; margin-top: 28px; }
+.cmp-results > .stats { margin-bottom: 0; }
+.cmp-warnings { display: grid; gap: 10px; }
+.cmp-warnings .notice { margin: 0; }
+.cmp-toolbar { align-items: center; }
+.cmp-toolbar .seg { flex-wrap: wrap; }
+.cmp-toolbar .seg button[disabled] { opacity: .45; cursor: not-allowed; }
+.cmp-toolbar .switch { border-top: 0; padding: 0; align-items: center; grid-template-columns: 40px auto; gap: 10px; }
+.cmp-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.cmp-flag { margin-left: 4px; }
+.cmp-break { overflow-wrap: anywhere; }
+.cmp-note { margin-top: 12px; }
+.table-diff td { vertical-align: top; }
+.table-diff .chip { white-space: nowrap; }
+.view.is-entering .table-diff tbody tr { animation: view-in .45s var(--ease) both; animation-delay: calc(var(--k, 0) * 35ms + .12s); }
+
+/* Texto eliminado y añadido: color y marca tipográfica, no solo color. */
+.diff-line { margin: 0; line-height: 1.75; overflow-wrap: anywhere; }
+.diff-ctx { color: var(--ink-3); }
+.diff-del { background: var(--alert-soft); color: var(--alert); text-decoration: line-through; text-decoration-thickness: 1px; border-radius: 4px; padding: 1px 3px; }
+.diff-ins { background: var(--seal-soft); color: var(--seal); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 4px; padding: 1px 3px; }
+
+.cmp-details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.cmp-details > summary::-webkit-details-marker { display: none; }
+.cmp-details > summary::before { content: '›'; display: inline-block; color: var(--ink-3); transition: transform .2s var(--ease); }
+.cmp-details[open] > summary::before { transform: rotate(90deg); }
+.cmp-details > summary h2 { font-size: 16px; }
+.cmp-details > .prose { margin-top: 12px; }
+.cmp-norm { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; color: var(--ink-2); }
+
+@container view (max-width: 640px) {
+  .cmp-toolbar .seg { display: flex; width: 100%; }
+  .cmp-toolbar .seg button { flex: 1 1 auto; padding: 8px 10px; }
+  .cmp-toolbar .select-wrap { flex: 1 1 100%; }
+  .table-diff.table-cards tr { grid-template-columns: 1fr 1fr; }
+}
+/* Etiquetas «Orig.» / «Nueva» de las huellas comparadas (en Verificar son H₀ / H₁, más cortas). */
+.cmp-hexcmp .hexcmp-k { width: 44px; }

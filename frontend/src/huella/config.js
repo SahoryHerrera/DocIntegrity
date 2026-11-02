@@ -15,6 +15,8 @@ export const API = {
   // (el HttpClient del backend espera hasta 5 minutos al modelo).
   timeoutMs: 30_000,
   longTimeoutMs: 360_000,
+  // La comparación extrae el texto de dos PDF (hasta 60 s en el servidor) más la subida.
+  comparisonTimeoutMs: 150_000,
 };
 
 /* Solo para mostrar; el backend tiene su propia configuración de blockchain. */
@@ -35,6 +37,7 @@ export const ENDPOINTS = [
   ['POST', '/api/documents/{id}/verify', 'Verifica un archivo frente a un documento propio.'],
   ['POST', '/api/documents/analyze', 'Analiza un PDF con IA sin guardarlo.'],
   ['POST', '/api/documents/extract-text', 'Extrae el texto de un PDF sin guardarlo.'],
+  ['POST', '/api/comparisons', 'Compara dos PDF (huellas y texto) sin guardarlos ni usar la blockchain.'],
 ];
 
 /* Funciones públicas de DocumentRegistry.sol. */

@@ -16,6 +16,7 @@ export default function CommandPalette({ onClose, onToggleTheme, onLogout }) {
   const actions = [
     { label: 'Registrar documento', ic: 'upload', run: go('#/registrar') },
     { label: 'Verificar documento', ic: 'shield', run: go('#/verificar') },
+    { label: 'Comparar versiones de un PDF', ic: 'compare', run: go('#/comparar') },
     { label: 'Ver documentos', ic: 'files', run: go('#/documentos') },
     { label: 'Explorar la blockchain', ic: 'blocks', run: go('#/cadena') },
     { label: 'Ver actividad', ic: 'activity', run: go('#/actividad') },

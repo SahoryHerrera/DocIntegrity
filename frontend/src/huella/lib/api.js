@@ -4,6 +4,7 @@
  */
 import { API } from '../config.js';
 import { normalizeAuth, normalizeBlockchainStatus, normalizeDocument, normalizeRegistration, normalizeSession, normalizeVerification } from './adapters.js';
+import { normalizeComparison } from './comparison.js';
 import { createHttpClient } from './http.js';
 import { requestLog } from './requestLog.js';
 
@@ -47,6 +48,16 @@ export function createApi(request) {
       analyze: (file, opts) => request('POST', '/api/documents/analyze', { form: fileForm(file), timeoutMs: API.longTimeoutMs, ...opts }),
       /* POST /api/documents/extract-text (file) → { fileName, text }, sin guardar */
       extractText: (file, opts) => request('POST', '/api/documents/extract-text', { form: fileForm(file), ...opts }),
+    },
+
+    comparisons: {
+      /* POST /api/comparisons (original, modified) → ComparisonResultDto. No guarda nada ni usa la blockchain. */
+      compare: async (original, modified, opts) => {
+        const form = new FormData();
+        form.append('original', original, original.name || 'original.pdf');
+        form.append('modified', modified, modified.name || 'nueva.pdf');
+        return normalizeComparison(await request('POST', '/api/comparisons', { form, timeoutMs: API.comparisonTimeoutMs, ...opts }));
+      },
     },
   };
 }

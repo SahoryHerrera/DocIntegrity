@@ -40,4 +40,6 @@ export const ICONS = {
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
+  /* Propio de la versión React: dos páginas lado a lado (comparar versiones). */
+  compare: '<rect x="3.5" y="4" width="7" height="16" rx="1.5"/><rect x="13.5" y="4" width="7" height="16" rx="1.5"/><path d="M6 8.5h2M6 12h2M16 8.5h2M16 12h2M16 15.5h2"/>',
 };

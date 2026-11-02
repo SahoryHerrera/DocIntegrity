@@ -6,7 +6,7 @@ import { fmtClock, initials } from '../lib/format.js';
 
 const NAV = [
   ['panel', 'Panel', 'panel'], ['registrar', 'Registrar', 'upload'], ['documentos', 'Documentos', 'files'],
-  ['verificar', 'Verificar', 'shield'], ['cadena', 'Blockchain', 'blocks'], ['actividad', 'Actividad', 'activity'], ['ajustes', 'Ajustes', 'sliders'],
+  ['verificar', 'Verificar', 'shield'], ['comparar', 'Comparar', 'compare'], ['cadena', 'Blockchain', 'blocks'], ['actividad', 'Actividad', 'activity'], ['ajustes', 'Ajustes', 'sliders'],
 ];
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const current = (active, key) => (active === key ? 'page' : undefined);

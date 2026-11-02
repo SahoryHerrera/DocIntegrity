@@ -13,6 +13,7 @@ import Shell, { ViewFrame } from './layout/Shell.jsx';
 import ActividadView from './views/ActividadView.jsx';
 import AjustesView from './views/AjustesView.jsx';
 import CadenaView from './views/CadenaView.jsx';
+import CompararView from './views/CompararView.jsx';
 import DocumentoDetalleView from './views/DocumentoDetalleView.jsx';
 import DocumentosView from './views/DocumentosView.jsx';
 import LoginView from './views/LoginView.jsx';
@@ -25,6 +26,7 @@ const VIEWS = {
   registrar: { title: 'Registrar documento', render: () => <RegistrarView /> },
   documentos: { title: 'Documentos', render: (arg) => (arg ? <DocumentoDetalleView id={arg} /> : <DocumentosView />) },
   verificar: { title: 'Verificar documento', render: (arg) => <VerificarView id={arg} /> },
+  comparar: { title: 'Comparar versiones', render: () => <CompararView /> },
   cadena: { title: 'Blockchain', render: () => <CadenaView /> },
   actividad: { title: 'Actividad', render: () => <ActividadView /> },
   ajustes: { title: 'Ajustes', render: (arg, ctx) => <AjustesView theme={ctx.theme} auth={ctx.auth} /> },
