@@ -4,7 +4,7 @@
  */
 import { API } from '../config.js';
 import { normalizeAuth, normalizeBlockchainStatus, normalizeDocument, normalizeRegistration, normalizeSession, normalizeVerification } from './adapters.js';
-import { normalizeComparison } from './comparison.js';
+import { normalizeComparison, normalizeExplanation } from './comparison.js';
 import { createHttpClient } from './http.js';
 import { requestLog } from './requestLog.js';
 
@@ -58,6 +58,8 @@ export function createApi(request) {
         form.append('modified', modified, modified.name || 'nueva.pdf');
         return normalizeComparison(await request('POST', '/api/comparisons', { form, timeoutMs: API.comparisonTimeoutMs, ...opts }));
       },
+      /* POST /api/comparisons/{id}/explanation → ComparisonExplanationDto. Interpretación con IA; no altera la comparación. */
+      explain: async (id, opts) => normalizeExplanation(await request('POST', `/api/comparisons/${encodeURIComponent(id)}/explanation`, { timeoutMs: API.explanationTimeoutMs, ...opts })),
     },
   };
 }

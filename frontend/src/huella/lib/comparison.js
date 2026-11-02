@@ -145,3 +145,45 @@ export function comparisonErrorText(e, totalBytes, maxFileMB) {
   if (e?.status === 503 && code === 'comparison_busy') return 'Hay demasiadas comparaciones en curso. Espera unos segundos e inténtalo de nuevo.';
   return e?.message || 'No se pudo comparar los documentos.';
 }
+
+/* ---------- Explicación con IA (POST /api/comparisons/{id}/explanation) ---------- */
+
+export const RELEVANCE = {
+  alta: { label: 'Relevancia alta', tone: 'warn' },
+  media: { label: 'Relevancia media', tone: 'info' },
+  baja: { label: 'Relevancia baja', tone: 'neutral' },
+};
+
+export function normalizeExplanation(e) {
+  return {
+    ...e,
+    summary: typeof e.summary === 'string' ? e.summary : '',
+    changes: Array.isArray(e.changes) ? e.changes : [],
+    discardedChangeIds: Array.isArray(e.discardedChangeIds) ? e.discardedChangeIds : [],
+    unexplainedChangeIds: Array.isArray(e.unexplainedChangeIds) ? e.unexplainedChangeIds : [],
+    groundingWarnings: Array.isArray(e.groundingWarnings) ? e.groundingWarnings : [],
+  };
+}
+
+/* Explicaciones y avisos indexados por id de cambio. */
+export function explanationIndex(explanation) {
+  const byId = new Map();
+  for (const c of explanation?.changes || []) byId.set(c.id, { ...c, warnings: [] });
+  for (const w of explanation?.groundingWarnings || []) if (w.changeId && byId.has(w.changeId)) byId.get(w.changeId).warnings.push(w.message);
+  return byId;
+}
+
+/* Mensaje de error de la explicación. El resultado determinista nunca se ve afectado. */
+export function explanationErrorText(e) {
+  const code = e?.data?.code;
+  if (code === 'comparison_not_found') return 'La comparación caducó o ya no está disponible (se conserva 15 minutos). Vuelve a comparar los archivos para pedir la explicación.';
+  if (code === 'ai_unavailable') return 'Ollama no está disponible. Comprueba que esté en ejecución e inténtalo de nuevo.';
+  if (code === 'ai_timeout') return 'Ollama tardó demasiado en redactar la explicación. Inténtalo de nuevo.';
+  if (code === 'ai_rejected') return 'La IA devolvió una respuesta con un formato inválido y se descartó. Inténtalo de nuevo.';
+  if (code === 'ai_busy') return 'La IA está explicando otra comparación. Inténtalo de nuevo en unos segundos.';
+  if (e?.kind === 'timeout') return 'No hubo respuesta a tiempo. Inténtalo de nuevo.';
+  if (e?.kind === 'network') return 'No se pudo conectar con la API de DocIntegrity.';
+  if (e?.status === 401) return 'Tu sesión no es válida o expiró. Inicia sesión de nuevo.';
+  if (e?.status === 403) return 'La solicitud fue rechazada por la protección contra CSRF. Recarga la página e inténtalo de nuevo.';
+  return e?.message || 'No se pudo generar la explicación.';
+}

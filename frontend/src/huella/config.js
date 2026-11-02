@@ -17,6 +17,8 @@ export const API = {
   longTimeoutMs: 360_000,
   // La comparación extrae el texto de dos PDF (hasta 60 s en el servidor) más la subida.
   comparisonTimeoutMs: 150_000,
+  // La explicación con IA espera a Ollama hasta 120 s en el servidor.
+  explanationTimeoutMs: 150_000,
 };
 
 /* Solo para mostrar; el backend tiene su propia configuración de blockchain. */
@@ -38,6 +40,7 @@ export const ENDPOINTS = [
   ['POST', '/api/documents/analyze', 'Analiza un PDF con IA sin guardarlo.'],
   ['POST', '/api/documents/extract-text', 'Extrae el texto de un PDF sin guardarlo.'],
   ['POST', '/api/comparisons', 'Compara dos PDF (huellas y texto) sin guardarlos ni usar la blockchain.'],
+  ['POST', '/api/comparisons/{id}/explanation', 'Explicación con IA de una comparación propia (vigente 15 minutos). No altera el resultado.'],
 ];
 
 /* Funciones públicas de DocumentRegistry.sol. */

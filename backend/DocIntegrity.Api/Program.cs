@@ -8,6 +8,7 @@ using DocIntegrity.Api.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -97,6 +98,30 @@ builder.Services.AddSingleton<ComparisonGate>();
 builder.Services.AddSingleton<IPdfPageExtractor, PdfPageExtractor>();
 
 builder.Services.AddScoped<IDocumentComparisonService, DocumentComparisonService>();
+
+// Explicación con IA de una comparación: caché en memoria por usuario (15 min) y Ollama.
+// La IA solo interpreta los cambios deterministas; no altera el veredicto.
+builder.Services.Configure<ExplanationOptions>(
+    builder.Configuration.GetSection(ExplanationOptions.SectionName));
+
+builder.Services.TryAddSingleton(TimeProvider.System);
+
+builder.Services.AddSingleton<ComparisonCache>();
+
+builder.Services.AddSingleton<ExplanationGate>();
+
+builder.Services.AddHttpClient<
+    IComparisonExplainer,
+    OllamaComparisonExplainer
+>(client =>
+{
+    client.BaseAddress = new Uri(
+        builder.Configuration["Ollama:BaseUrl"]
+        ?? "http://localhost:11434");
+
+    // El tiempo máximo real lo fija ExplanationOptions.TimeoutSeconds.
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
 
 // =========================================================
 // ARTIFICIAL INTELLIGENCE - OLLAMA

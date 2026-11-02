@@ -31,19 +31,48 @@ public class ComparisonsController : ControllerBase
     private readonly IDocumentComparisonService _comparisonService;
     private readonly ComparisonGate _gate;
     private readonly ComparisonOptions _options;
+    private readonly ComparisonCache _cache;
+    private readonly IComparisonExplainer _explainer;
+    private readonly ExplanationGate _explanationGate;
+    private readonly ExplanationOptions _explanationOptions;
     private readonly AppDbContext _dbContext;
 
     public ComparisonsController(
         IDocumentComparisonService comparisonService,
         ComparisonGate gate,
         IOptions<ComparisonOptions> options,
+        ComparisonCache cache,
+        IComparisonExplainer explainer,
+        ExplanationGate explanationGate,
+        IOptions<ExplanationOptions> explanationOptions,
         AppDbContext dbContext)
     {
         _comparisonService = comparisonService;
         _gate = gate;
         _options = options.Value;
+        _cache = cache;
+        _explainer = explainer;
+        _explanationGate = explanationGate;
+        _explanationOptions = explanationOptions.Value;
         _dbContext = dbContext;
     }
+
+    // Id del usuario del JWT, comprobando que siga existiendo (solo lectura).
+    private async Task<Guid?> CurrentUserIdAsync(CancellationToken cancellationToken)
+    {
+        var userId = User.GetUserId();
+
+        return userId is not null &&
+               await _dbContext.Users.AsNoTracking().AnyAsync(user => user.Id == userId, cancellationToken)
+            ? userId
+            : null;
+    }
+
+    private UnauthorizedObjectResult InvalidSession() => Unauthorized(new
+    {
+        message = "Tu sesión no es válida. Inicia sesión de nuevo.",
+        code = "unauthorized"
+    });
 
     // POST /api/comparisons (multipart/form-data: original, modified)
     [HttpPost]
@@ -53,16 +82,11 @@ public class ComparisonsController : ControllerBase
     public async Task<ActionResult<ComparisonResultDto>> Compare()
     {
         var cancellationToken = HttpContext.RequestAborted;
-        var userId = User.GetUserId();
+        var userId = await CurrentUserIdAsync(cancellationToken);
 
-        if (userId is null ||
-            !await _dbContext.Users.AsNoTracking().AnyAsync(user => user.Id == userId, cancellationToken))
+        if (userId is null)
         {
-            return Unauthorized(new
-            {
-                message = "Tu sesión no es válida. Inicia sesión de nuevo.",
-                code = "unauthorized"
-            });
+            return InvalidSession();
         }
 
         if (!Request.HasFormContentType)
@@ -128,6 +152,81 @@ public class ComparisonsController : ControllerBase
             inputs[i] = new ComparisonInput(file.FileName, content);
         }
 
-        return Ok(await _comparisonService.CompareAsync(inputs[0], inputs[1], lease, cancellationToken));
+        var result = await _comparisonService.CompareAsync(inputs[0], inputs[1], lease, cancellationToken);
+
+        // Solo los resultados con cambios detallados se pueden explicar: se guardan en memoria para su propietario.
+        if (result.Verdict == DocumentComparisonService.Verdicts.Modified && result.Changes.Count > 0 && !result.DiffIncomplete)
+        {
+            var entry = _cache.Add(userId.Value, result);
+            result.ComparisonId = entry.Id;
+            result.ExpiresAt = entry.ExpiresAt.UtcDateTime;
+            result.ExplanationAvailable = true;
+        }
+
+        return Ok(result);
+    }
+
+    // POST /api/comparisons/{id}/explanation
+    // Explicación con IA (Ollama) de los cambios de una comparación propia y vigente.
+    // No modifica la comparación: si Ollama falla, el resultado determinista sigue intacto.
+    [HttpPost("{id:guid}/explanation")]
+    public async Task<ActionResult<ComparisonExplanationDto>> Explain(Guid id)
+    {
+        var cancellationToken = HttpContext.RequestAborted;
+        var userId = await CurrentUserIdAsync(cancellationToken);
+
+        if (userId is null)
+        {
+            return InvalidSession();
+        }
+
+        // Mismo 404 si no existe, si venció o si es de otra persona.
+        var entry = _cache.Get(id, userId.Value);
+
+        if (entry is null)
+        {
+            return NotFound(new
+            {
+                message = $"La comparación no existe o caducó (se conserva {_explanationOptions.CacheMinutes:0} minutos). Vuelve a comparar los archivos.",
+                code = "comparison_not_found"
+            });
+        }
+
+        if (entry.Explanation is not null)
+        {
+            return Ok(entry.Explanation);
+        }
+
+        await entry.Lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            // Otra solicitud pudo generarla mientras se esperaba.
+            if (entry.Explanation is not null)
+            {
+                return Ok(entry.Explanation);
+            }
+
+            using var turn = await _explanationGate.TryEnterAsync(TimeSpan.FromSeconds(_explanationOptions.QueueTimeoutSeconds), cancellationToken);
+
+            if (turn is null)
+            {
+                Response.Headers.RetryAfter = "15";
+
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    message = "La IA está explicando otra comparación. Inténtalo de nuevo en unos segundos.",
+                    code = "ai_busy"
+                });
+            }
+
+            // Los errores de Ollama llegan como ExternalServiceException: ai_unavailable, ai_timeout o ai_rejected.
+            entry.Explanation = await _explainer.ExplainAsync(entry.Id, entry.Result, cancellationToken);
+            return Ok(entry.Explanation);
+        }
+        finally
+        {
+            entry.Lock.Release();
+        }
     }
 }

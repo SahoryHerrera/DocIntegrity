@@ -74,3 +74,19 @@
 }
 /* Etiquetas «Orig.» / «Nueva» de las huellas comparadas (en Verificar son H₀ / H₁, más cortas). */
 .cmp-hexcmp .hexcmp-k { width: 44px; }
+
+/* ---------- Explicación con IA de la comparación (etapa 7.3) ---------- */
+.cmp-head-meta { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmp-ai-block .prose { margin: 0 0 4px; }
+.cmp-ai-block > .notice { margin: 12px 0 0; }
+.cmp-ai-summary { font-size: 15px; line-height: 1.65; color: var(--ink); }
+.cmp-ai-loading { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 14px; }
+.cmp-ai-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+/* Explicación de un cambio: plegada y con fondo propio, separada de los hechos de la fila. */
+.cmp-ai { margin-top: 8px; border-radius: 10px; background: var(--info-soft); padding: 6px 10px; font-size: 13.5px; }
+.cmp-ai > summary { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: pointer; color: var(--info); font-weight: 500; list-style: none; }
+.cmp-ai > summary::-webkit-details-marker { display: none; }
+.cmp-ai > summary .ic { width: 15px; height: 15px; }
+.cmp-ai > p { margin: 6px 0 2px; color: var(--ink); line-height: 1.55; }
+.cmp-ai-warn { display: flex; gap: 6px; align-items: flex-start; color: var(--warn) !important; font-size: 12.5px; }
+.cmp-ai-warn .ic { flex: none; width: 14px; height: 14px; margin-top: 2px; }

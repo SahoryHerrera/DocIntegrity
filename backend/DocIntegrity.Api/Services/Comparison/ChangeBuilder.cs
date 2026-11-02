@@ -18,12 +18,17 @@ public sealed class ChangeBuildContext
 
 // Convierte el guion de edición de Myers en cambios legibles:
 // solo inserciones → added; solo borrados → removed; ambos → replaced.
-public static class ChangeBuilder
+public static partial class ChangeBuilder
 {
     private const int MaxGapUnits = 2;
     private const int MaxGapWordLength = 3;
 
-    private readonly record struct Hunk(int AStart, int AEnd, int BStart, int BEnd);
+    // Tramo de cambio: A[AStart..AEnd) en el original y B[BStart..BEnd) en la nueva versión.
+    public readonly record struct Hunk(int AStart, int AEnd, int BStart, int BEnd);
+
+    // Marcadores de estructura: «3.», «2.1.», «IV.», «a)», viñetas. No son palabras de una frase.
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(\d{1,3}(\.\d{1,3})*[.)]|[IVXLCivxlc]{1,6}[.)]|[A-Za-z][.)]|[-•–·*])$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex StructuralMarkerRegex();
 
     public static (List<ChangeDto> Changes, ComparisonStatsDto Stats) Build(
         IReadOnlyList<TextUnit> original,
@@ -31,7 +36,7 @@ public static class ChangeBuilder
         IReadOnlyList<DiffSegment> segments,
         ChangeBuildContext context)
     {
-        var hunks = BuildHunks(original, segments, context.MergeShortGaps);
+        var hunks = BuildHunks(original, modified, segments, context);
         var changes = new List<ChangeDto>(hunks.Count);
         var pagesOriginal = new SortedSet<int>();
         var pagesModified = new SortedSet<int>();
@@ -54,8 +59,8 @@ public static class ChangeBuilder
                 _ => "added"
             };
 
-            var originalSide = Side(original, hunk.AStart, hunk.AEnd, originalText, context.MaxTextLength);
-            var modifiedSide = Side(modified, hunk.BStart, hunk.BEnd, modifiedText, context.MaxTextLength);
+            var originalSide = Side(original, hunk.AStart, hunk.AEnd, originalText, context.MaxTextLength, context.Separator);
+            var modifiedSide = Side(modified, hunk.BStart, hunk.BEnd, modifiedText, context.MaxTextLength, context.Separator);
 
             var touchedOriginal = Pages(original, hunk.AStart, hunk.AEnd, originalSide);
             var touchedModified = Pages(modified, hunk.BStart, hunk.BEnd, modifiedSide);
@@ -123,7 +128,19 @@ public static class ChangeBuilder
         return (changes, stats);
     }
 
-    private static List<Hunk> BuildHunks(IReadOnlyList<TextUnit> original, IReadOnlyList<DiffSegment> segments, bool mergeShortGaps)
+    // Agrupa los tramos no iguales del guion de Myers en cambios.
+    // Un hueco corto (1-2 palabras iguales de hasta 3 letras: «de», «la», «por») entre dos tramos se fusiona
+    // para no fragmentar una misma frase, SALVO que separe modificaciones independientes:
+    //   1. el hueco es un marcador de estructura («3.», «IV.», «a)», viñetas);
+    //   2. los dos tramos están en secciones distintas (en cualquiera de los dos documentos);
+    //   3. el hueco cruza un salto de línea y el primer tramo termina una frase (. ; : ! ?).
+    // Un reemplazo de una frase que ocupa varias líneas sigue siendo un solo cambio.
+    // Pública para las pruebas: los tramos y los huecos iguales cubren cada unidad exactamente una vez.
+    public static List<Hunk> BuildHunks(
+        IReadOnlyList<TextUnit> original,
+        IReadOnlyList<TextUnit> modified,
+        IReadOnlyList<DiffSegment> segments,
+        ChangeBuildContext context)
     {
         var hunks = new List<Hunk>();
         Hunk? open = null;
@@ -148,10 +165,11 @@ public static class ChangeBuilder
 
                 case DiffKind.Equal when open is { } current:
                     var isShortGap =
-                        mergeShortGaps &&
+                        context.MergeShortGaps &&
                         i + 1 < segments.Count &&
                         segment.Length <= MaxGapUnits &&
-                        Enumerable.Range(segment.AStart, segment.Length).All(k => original[k].Text.Length <= MaxGapWordLength);
+                        Enumerable.Range(segment.AStart, segment.Length).All(k => original[k].Text.Length <= MaxGapWordLength) &&
+                        !SeparatesIndependentChanges(current, segment, original, modified, context);
 
                     if (isShortGap)
                     {
@@ -175,18 +193,102 @@ public static class ChangeBuilder
         return hunks;
     }
 
-    private static ChangeSideDto Side(IReadOnlyList<TextUnit> units, int start, int end, string text, int maxLength)
+    private static bool SeparatesIndependentChanges(
+        Hunk previous,
+        DiffSegment gap,
+        IReadOnlyList<TextUnit> original,
+        IReadOnlyList<TextUnit> modified,
+        ChangeBuildContext context)
+    {
+        // 1. Marcador de estructura en el hueco.
+        if (Enumerable.Range(gap.AStart, gap.Length).Any(k => StructuralMarkerRegex().IsMatch(original[k].Text)))
+        {
+            return true;
+        }
+
+        // Posiciones a cada lado del hueco: la unidad justo antes (último cambio del tramo anterior o
+        // su punto de inserción) y la primera después (inicio del tramo siguiente).
+        var sides = new[]
+        {
+            (Units: original, Before: gap.AStart - 1, After: gap.AStart + gap.Length, HasChange: previous.AEnd > previous.AStart, Headings: context.HeadingsOriginal),
+            (Units: modified, Before: gap.BStart - 1, After: gap.BStart + gap.Length, HasChange: previous.BEnd > previous.BStart, Headings: context.HeadingsModified)
+        };
+
+        var crossesLine = false;
+        var endsSentence = false;
+
+        foreach (var side in sides)
+        {
+            if (side.Units.Count == 0)
+            {
+                continue;
+            }
+
+            var before = side.Units[Math.Clamp(side.Before, 0, side.Units.Count - 1)];
+            var after = side.Units[Math.Clamp(side.After, 0, side.Units.Count - 1)];
+
+            // 2. Secciones distintas.
+            var sectionBefore = SectionDetector.Find(side.Headings, before.Page, before.Line);
+            var sectionAfter = SectionDetector.Find(side.Headings, after.Page, after.Line);
+
+            if (sectionBefore != sectionAfter)
+            {
+                return true;
+            }
+
+            crossesLine |= before.Page != after.Page || before.Line != after.Line;
+
+            if (side.HasChange && side.Before >= 0)
+            {
+                endsSentence |= EndsSentence(side.Units[side.Before].Text);
+            }
+        }
+
+        // 3. Salto de línea después de una frase terminada.
+        return crossesLine && endsSentence;
+    }
+
+    // «contrato.», «pago;», «(anexo).», «"fin."» → true.
+    private static bool EndsSentence(string word)
+    {
+        var trimmed = word.TrimEnd(')', ']', '"', '\'', '\u00BB', '\u201D');
+        return trimmed.Length > 0 && trimmed[^1] is '.' or ';' or ':' or '!' or '?';
+    }
+
+    private static ChangeSideDto Side(IReadOnlyList<TextUnit> units, int start, int end, string text, int maxLength, string separator)
     {
         if (end > start)
         {
+            // Resto de la misma línea: desde el inicio de la línea del primer cambio
+            // y hasta el final de la línea del último, sin pasar a líneas vecinas.
+            var first = units[start];
+            var last = units[end - 1];
+            var lineStart = start;
+            var lineEnd = end;
+
+            while (lineStart > 0 && units[lineStart - 1].Page == first.Page && units[lineStart - 1].Line == first.Line)
+            {
+                lineStart--;
+            }
+
+            while (lineEnd < units.Count && units[lineEnd].Page == last.Page && units[lineEnd].Line == last.Line)
+            {
+                lineEnd++;
+            }
+
+            var before = Join(units, lineStart, start, separator);
+            var after = Join(units, end, lineEnd, separator);
+
             return new ChangeSideDto
             {
                 Text = text.Length > maxLength ? text[..maxLength] : text,
                 TextTruncated = text.Length > maxLength,
-                Page = units[start].Page,
-                Line = units[start].Line,
-                EndPage = units[end - 1].Page,
-                EndLine = units[end - 1].Line
+                Page = first.Page,
+                Line = first.Line,
+                EndPage = last.Page,
+                EndLine = last.Line,
+                LineBefore = before.Length > maxLength ? before[^maxLength..] : before,
+                LineAfter = after.Length > maxLength ? after[..maxLength] : after
             };
         }
 

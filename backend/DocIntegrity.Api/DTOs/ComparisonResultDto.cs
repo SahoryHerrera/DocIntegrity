@@ -4,6 +4,14 @@ namespace DocIntegrity.Api.DTOs;
 // huellas, extracción con PdfPig y diff de Myers. La IA no interviene.
 public class ComparisonResultDto
 {
+    // Identificador para pedir la explicación con IA (solo resultados con cambios).
+    // La comparación se guarda en memoria para su propietario hasta ExpiresAt.
+    public Guid? ComparisonId { get; set; }
+
+    public DateTime? ExpiresAt { get; set; }
+
+    public bool ExplanationAvailable { get; set; }
+
     // identical | same_text | modified | not_comparable
     public string Verdict { get; set; } = string.Empty;
 
@@ -137,6 +145,10 @@ public class ChangeSideDto
     public int? EndPage { get; set; }
     public int? EndLine { get; set; }
     public bool InsertionPoint { get; set; }
+    // Resto de la MISMA línea antes y después del cambio (sin cruzar a otras líneas).
+    // Permite saber a qué campo o cláusula pertenece el cambio sin mezclarlo con líneas vecinas.
+    public string LineBefore { get; set; } = string.Empty;
+    public string LineAfter { get; set; } = string.Empty;
 }
 
 public class ChangeContextDto

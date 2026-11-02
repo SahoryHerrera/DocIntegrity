@@ -31,6 +31,7 @@ namespace DocIntegrity.Api.Tests;
 public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
 {
     public static readonly Guid FictitiousUser = Guid.Parse("aaaaaaaa-0000-4000-8000-000000000001");
+    public static readonly Guid OtherFictitiousUser = Guid.Parse("bbbbbbbb-0000-4000-8000-000000000002");
 
     private readonly InMemoryDatabaseRoot _root = new();
     private readonly string _database = $"comparaciones-{Guid.NewGuid()}";
@@ -40,6 +41,11 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
     public int MaxConcurrentComparisons { get; init; } = 2;
     public double QueueTimeoutSeconds { get; init; } = 5;
     public IPdfPageExtractor? Extractor { get; init; }
+    // Explicación con IA: sustituto de Ollama, reloj controlable y límites.
+    public IComparisonExplainer? Explainer { get; init; }
+    public TimeProvider? Time { get; init; }
+    public int MaxConcurrentExplanations { get; init; } = 1;
+    public double ExplanationQueueTimeoutSeconds { get; init; } = 3;
 
     public HttpClient Start()
     {
@@ -48,11 +54,17 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
 
         using (var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_database, _root).Options))
         {
-            db.Users.Add(new User
-            {
-                Id = FictitiousUser, GoogleId = "google-ficticio", Email = "ficticio@ejemplo.test",
-                Name = "Usuario ficticio", CreatedAt = DateTime.UtcNow, LastLoginAt = DateTime.UtcNow
-            });
+            db.Users.AddRange(
+                new User
+                {
+                    Id = FictitiousUser, GoogleId = "google-ficticio", Email = "ficticio@ejemplo.test",
+                    Name = "Usuario ficticio", CreatedAt = DateTime.UtcNow, LastLoginAt = DateTime.UtcNow
+                },
+                new User
+                {
+                    Id = OtherFictitiousUser, GoogleId = "google-ficticio-2", Email = "otro@ejemplo.test",
+                    Name = "Otro usuario ficticio", CreatedAt = DateTime.UtcNow, LastLoginAt = DateTime.UtcNow
+                });
             db.SaveChanges();
         }
 
@@ -80,10 +92,26 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
                 options.QueueTimeoutSeconds = QueueTimeoutSeconds;
             });
 
+            services.Configure<ExplanationOptions>(options =>
+            {
+                options.MaxConcurrentExplanations = MaxConcurrentExplanations;
+                options.QueueTimeoutSeconds = ExplanationQueueTimeoutSeconds;
+            });
+
             if (Extractor is not null)
             {
                 services.RemoveAll<IPdfPageExtractor>();
                 services.AddSingleton(Extractor);
+            }
+
+            // Las pruebas de integración nunca llaman a un Ollama real.
+            services.RemoveAll<IComparisonExplainer>();
+            services.AddSingleton(Explainer ?? new UnusedExplainer());
+
+            if (Time is not null)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton(Time);
             }
         });
     }
@@ -91,7 +119,7 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
     public string Token(Guid userId, TimeSpan? lifetime = null)
     {
         var now = DateTime.UtcNow;
-        var expires = now + (lifetime ?? TimeSpan.FromMinutes(10));
+        var expires = now + (lifetime ?? TimeSpan.FromMinutes(60));
 
         var token = new JwtSecurityToken(
             "DocIntegrity.Api",
@@ -102,6 +130,12 @@ public sealed class ComparisonApiFactory : WebApplicationFactory<Program>
             signingCredentials: new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Secret)), SecurityAlgorithms.HmacSha256));
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class UnusedExplainer : IComparisonExplainer
+    {
+        public Task<DocIntegrity.Api.DTOs.ComparisonExplanationDto> ExplainAsync(Guid comparisonId, DocIntegrity.Api.DTOs.ComparisonResultDto result, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Esta prueba no debe pedir explicaciones.");
     }
 
     public sealed class WriteGuard : SaveChangesInterceptor

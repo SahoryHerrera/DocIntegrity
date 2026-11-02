@@ -4,13 +4,21 @@ namespace DocIntegrity.Api.Services.Comparison;
 
 // Limita las comparaciones simultáneas de este servidor (memoria y CPU acotadas).
 // Se toma el turno ANTES de leer los archivos de la solicitud.
-public sealed class ComparisonGate
+public sealed class ComparisonGate(IOptions<ComparisonOptions> options)
+    : ConcurrencyGate(options.Value.MaxConcurrentComparisons);
+
+// Limita las explicaciones con IA que se generan a la vez (Ollama local).
+public sealed class ExplanationGate(IOptions<ExplanationOptions> options)
+    : ConcurrencyGate(options.Value.MaxConcurrentExplanations);
+
+// Semáforo con turnos que pueden retenerse hasta que termine un trabajo en curso.
+public abstract class ConcurrencyGate
 {
     private readonly SemaphoreSlim _semaphore;
 
-    public ComparisonGate(IOptions<ComparisonOptions> options)
+    protected ConcurrencyGate(int slots)
     {
-        var slots = Math.Max(1, options.Value.MaxConcurrentComparisons);
+        slots = Math.Max(1, slots);
         _semaphore = new SemaphoreSlim(slots, slots);
     }
 

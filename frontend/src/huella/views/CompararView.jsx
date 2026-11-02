@@ -7,8 +7,8 @@ import { Chip, EmptyState, FileCard, HashBlock, HexGroups, Kv, Notice, PageHead,
 import { APP } from '../config.js';
 import { api } from '../lib/api.js';
 import {
-  CHANGE_TYPES, COMPARISON_VERDICTS, EXTRACTION_STATUS, FILE_LABEL, METADATA_FIELDS, NOT_COMPARABLE_REASONS, RELIABILITY,
-  TAGS, WARNING_TONE, comparisonErrorText, filterChanges, locationText, pagesOf, sortWarnings, unitName,
+  CHANGE_TYPES, COMPARISON_VERDICTS, EXTRACTION_STATUS, FILE_LABEL, METADATA_FIELDS, NOT_COMPARABLE_REASONS, RELEVANCE, RELIABILITY,
+  TAGS, WARNING_TONE, comparisonErrorText, explanationErrorText, explanationIndex, filterChanges, locationText, pagesOf, sortWarnings, unitName,
 } from '../lib/comparison.js';
 import { validatePdf } from '../lib/files.js';
 import { bitDiff } from '../lib/glyph.js';
@@ -29,6 +29,8 @@ const SIDES = [
 
 const freshSide = () => ({ file: null, sha: null, error: null });
 const freshRun = () => ({ status: 'idle', result: null, failure: null, at: null });
+const freshAi = () => ({ status: 'idle', data: null, failure: null });
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
 function stepsFor(run) {
   if (run.status !== 'done') return STEPS.map((s) => ({ ...s, state: 'pending' }));
@@ -203,7 +205,19 @@ function ChangeText({ change }) {
   );
 }
 
-function ChangeRow({ change, index }) {
+/* Explicación de IA de un cambio, plegada para no mezclarla con los hechos de la tabla. */
+function ChangeAi({ ai }) {
+  const R = RELEVANCE[ai.relevance] || RELEVANCE.media;
+  return (
+    <details className="cmp-ai">
+      <summary><Icon name="spark" />Explicación de IA <Chip tone={R.tone}>{R.label}</Chip></summary>
+      <p>{ai.explanation}</p>
+      {ai.warnings.map((w) => <p key={w} className="cmp-ai-warn"><Icon name="alert" />{w}</p>)}
+    </details>
+  );
+}
+
+function ChangeRow({ change, index, ai }) {
   const T = CHANGE_TYPES[change.type];
   return (
     <tr style={{ '--k': Math.min(index, 20) }}>
@@ -217,6 +231,7 @@ function ChangeRow({ change, index }) {
       <td data-label="Cambio" className="cell-wide">
         <ChangeText change={change} />
         {change.section && <span className="cell-sub">Sección aproximada: {change.section.title}</span>}
+        {ai && <ChangeAi ai={ai} />}
       </td>
       <td data-label="Etiquetas" className="cell-wide">
         <span className="cmp-tags">
@@ -227,9 +242,10 @@ function ChangeRow({ change, index }) {
   );
 }
 
-function Changes({ result }) {
+function Changes({ result, explanation }) {
   const [filter, setFilter] = useState({ type: 'all', page: 'all', suspicious: false });
   const changes = result.changes;
+  const aiById = useMemo(() => explanationIndex(explanation), [explanation]);
   const pages = useMemo(() => pagesOf(changes), [changes]);
   const shown = useMemo(() => filterChanges(changes, filter), [changes, filter]);
   const counts = useMemo(() => Object.fromEntries(Object.keys(CHANGE_TYPES).map((k) => [k, changes.filter((c) => c.type === k).length])), [changes]);
@@ -242,7 +258,10 @@ function Changes({ result }) {
     <section className="panel">
       <header className="panel-head">
         <h2>Cambios en el texto</h2>
-        <span className="muted small">{result.changesTruncated ? `Se muestran ${fmtNum(changes.length)} de ${fmtNum(result.totalChanges)}` : plural(result.totalChanges, 'cambio', 'cambios')}</span>
+        <span className="cmp-head-meta">
+          <Chip tone="seal" icon="check">Detectados por la comparación determinista</Chip>
+          <span className="muted small">{result.changesTruncated ? `Se muestran ${fmtNum(changes.length)} de ${fmtNum(result.totalChanges)}` : plural(result.totalChanges, 'cambio', 'cambios')}</span>
+        </span>
       </header>
       {result.diffIncomplete
         ? <EmptyState icon="alert" title="Sin detalle de cambios" text="Los documentos tienen demasiadas diferencias para detallarlas dentro de los límites del servidor. El texto es distinto." />
@@ -278,7 +297,7 @@ function Changes({ result }) {
                 <thead><tr><th>Tipo</th><th>Original</th><th>Nueva versión</th><th>Cambio</th><th>Etiquetas</th></tr></thead>
                 <tbody>
                   {shown.length
-                    ? shown.map((c, i) => <ChangeRow key={c.id} change={c} index={i} />)
+                    ? shown.map((c, i) => <ChangeRow key={c.id} change={c} index={i} ai={aiById.get(c.id)} />)
                     : <tr><td colSpan={5}><EmptyState icon="filter" title="Ningún cambio con estos filtros" text="Prueba con otro tipo o con otra página." action={<button className="btn btn-sm btn-secondary" type="button" onClick={() => setFilter({ type: 'all', page: 'all', suspicious: false })}>Quitar filtros</button>} /></td></tr>}
                 </tbody>
               </table>
@@ -286,6 +305,71 @@ function Changes({ result }) {
             <p className="field-hint cmp-note">Páginas y líneas son aproximadas: dependen del orden en que el PDF guarda su texto. «(posición)» indica dónde se insertó o eliminó el texto en esa versión.</p>
           </>
         )}
+    </section>
+  );
+}
+
+/* Explicación con IA: interpretación de los cambios ya detectados, siempre identificada como IA. */
+function AiExplanation({ result, ai, onExplain, onRecompare }) {
+  if (!result.explanationAvailable || !result.comparisonId) return null;
+  const busy = ai.status === 'loading';
+  const data = ai.data;
+  const expired = ai.failure?.data?.code === 'comparison_not_found';
+  const summaryWarnings = data ? data.groundingWarnings.filter((w) => !w.changeId) : [];
+  const changeWarnings = data ? data.groundingWarnings.filter((w) => w.changeId).length : 0;
+
+  return (
+    <section className="ai-block cmp-ai-block" aria-live="polite" aria-busy={busy}>
+      <header className="ai-head">
+        <span className="ai-badge"><Icon name="spark" />Explicación de IA</span>
+        <span className="cmp-head-meta">
+          <Chip tone="info" icon="spark">Interpretación generada por IA</Chip>
+          <span className="muted small">Ollama, ejecutado en local{data?.model ? ` · ${data.model}` : ''}</span>
+        </span>
+      </header>
+
+      {ai.status === 'idle' && (
+        <>
+          <p className="prose">La IA puede redactar un resumen de los cambios detectados y explicar cada uno. Solo recibe los fragmentos que cambiaron, no los documentos completos, y no puede modificar el veredicto ni la tabla.</p>
+          <button className="btn btn-secondary" type="button" onClick={onExplain}><Icon name="spark" />Explicar los cambios con IA</button>
+          <p className="muted small">Disponible hasta las {fmtTime(result.expiresAt)}; después habrá que volver a comparar.</p>
+        </>
+      )}
+
+      {busy && <p className="cmp-ai-loading"><span className="spinner" aria-hidden="true" />Ollama está redactando la explicación. Puede tardar hasta dos minutos.</p>}
+
+      {ai.status === 'error' && (
+        <Notice
+          tone="warn" icon="alert"
+          action={expired
+            ? <button className="btn btn-sm btn-secondary" type="button" onClick={onRecompare}><Icon name="refresh" />Volver a comparar</button>
+            : <button className="btn btn-sm btn-secondary" type="button" onClick={onExplain}><Icon name="refresh" />Reintentar</button>}
+        >
+          <strong>No se pudo generar la explicación.</strong> {explanationErrorText(ai.failure)} El resultado de la comparación no cambia.
+        </Notice>
+      )}
+
+      {ai.status === 'done' && data && (
+        <>
+          {data.summary && <p className="prose cmp-ai-summary">{data.summary}</p>}
+          <p className="muted small">
+            Explicó {fmtNum(data.changes.length)} de {plural(data.changesSent, 'cambio enviado', 'cambios enviados')}
+            {data.changesOmitted > 0 && `; ${plural(data.changesOmitted, 'cambio no se envió', 'cambios no se enviaron')} por el límite de contexto`}
+            . Abre «Explicación de IA» en cada fila de la tabla para ver la de cada cambio.
+          </p>
+          {summaryWarnings.length > 0 && (
+            <Notice tone="warn" icon="alert">
+              <strong>Afirmaciones sin respaldo en los cambios detectados:</strong>
+              <ul className="cmp-ai-list">{summaryWarnings.map((w) => <li key={w.message}>{w.message}</li>)}</ul>
+            </Notice>
+          )}
+          {changeWarnings > 0 && <Notice tone="warn" icon="alert">{plural(changeWarnings, 'explicación de un cambio contiene', 'explicaciones de cambios contienen')} afirmaciones sin respaldo; se indican en su fila.</Notice>}
+          {data.discardedChangeIds.length > 0 && (
+            <Notice tone="info" icon="info">La IA mencionó cambios que no existen ({data.discardedChangeIds.join(', ')}). Se descartaron.</Notice>
+          )}
+          <p className="ai-note">{data.note}</p>
+        </>
+      )}
     </section>
   );
 }
@@ -303,9 +387,12 @@ function Normalization({ result }) {
 
 export default function CompararView() {
   const [sides, setSides] = useState({ original: freshSide(), modified: freshSide() });
-  const [run, setRun] = useState(freshRun);
+  const [run, setRunState] = useState(freshRun);
+  const [ai, setAi] = useState(freshAi);
   const running = run.status === 'running';
   const ready = sides.original.file && sides.modified.file;
+  // Cada comparación nueva descarta la explicación anterior.
+  const setRun = (value) => { setRunState(value); setAi(freshAi()); };
 
   const onFile = (key) => async (file) => {
     setRun(freshRun());
@@ -316,6 +403,17 @@ export default function CompararView() {
   };
   const clearSide = (key) => () => { setRun(freshRun()); setSides((s) => ({ ...s, [key]: freshSide() })); };
   const reset = () => { setRun(freshRun()); setSides({ original: freshSide(), modified: freshSide() }); };
+
+  const explain = async () => {
+    const id = run.result?.comparisonId;
+    if (!id || ai.status === 'loading') return;
+    setAi({ status: 'loading', data: null, failure: null });
+    try {
+      setAi({ status: 'done', data: await api.comparisons.explain(id), failure: null });
+    } catch (e) {
+      setAi({ status: 'error', data: null, failure: e });
+    }
+  };
 
   const start = async () => {
     if (!ready || running) return;
@@ -337,7 +435,7 @@ export default function CompararView() {
     <>
       <PageHead
         title="Comparar versiones"
-        lede="Compara dos versiones de un PDF. El resultado lo deciden las huellas SHA-256 y una comparación determinista del texto extraído; la IA no interviene. Los archivos no se guardan ni se registran en la blockchain."
+        lede="Compara dos versiones de un PDF. El resultado lo deciden las huellas SHA-256 y una comparación determinista del texto extraído; la IA solo puede explicar los cambios, a petición tuya. Los archivos no se guardan ni se registran en la blockchain."
       />
       <div className="cols cols-ver">
         <section className="ver-form">
@@ -385,7 +483,8 @@ export default function CompararView() {
         <div className="cmp-results">
           <Warnings result={run.result} />
           <Stats result={run.result} />
-          <Changes result={run.result} />
+          <AiExplanation result={run.result} ai={ai} onExplain={explain} onRecompare={start} />
+          <Changes result={run.result} explanation={ai.status === 'done' ? ai.data : null} />
           <MetadataTable result={run.result} />
           <Normalization result={run.result} />
         </div>
